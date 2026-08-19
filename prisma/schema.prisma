@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum Role {
+  CLIENT
+  OFFICER
+  ADMIN
+}
+
+enum CaseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(CLIENT)
+  cases        Case[]
+  reviewed    Case[]   @relation("ReviewedCases")
+  createdAt    DateTime @default(now())
+}
+
+model Case {
+  id             Int        @id @default(autoincrement())
+  caseNumber     String     @unique
+  userId         Int
+  caseType       String
+  description    String
+  status         CaseStatus @default(PENDING)
+  officerComment String?
+  reviewedById   Int?
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy     User?      @relation("ReviewedCases", fields: [reviewedById], references: [id])
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}

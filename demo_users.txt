@@ -1,0 +1,24 @@
+Demo officer:
+
+Email:    officer@legalaid.test
+Password: Password123!
+
+Demo client:
+
+Email:    client@legalaid.test
+Password: Password123!
+
+
+CREATE USER 'legal_aid'@'localhost' IDENTIFIED BY 'legalaid';
+
+
+
+
+
+SHOW GRANTS FOR 'legal_aid'@'localhost';
++--------------------------------------------------------------------------------------------------------------------------------------------+
+| Grants for legal_aid@localhost                                                                                                             |
++--------------------------------------------------------------------------------------------------------------------------------------------+
+| GRANT CREATE, DROP, REFERENCES, ALTER ON *.* TO `legal_aid`@`localhost` IDENTIFIED BY PASSWORD '*884C5F74D0B8006F3B8DD03012CC0BC17FB43FB2' |
+| GRANT ALL PRIVILEGES ON `legal_aid_poc`.* TO `legal_aid`@`localhost`                                                                       |
++--------------------------------------------------------------------------------------------------------------------------------------------+
