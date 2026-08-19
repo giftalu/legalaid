@@ -12,7 +12,7 @@ const adapter = new PrismaMariaDb({
   user: process.env.DATABASE_USER || "legal_aid",
   password: process.env.DATABASE_PASSWORD || "legalaid",
   database: process.env.DATABASE_NAME || "legal_aid_poc",
-  connectionLimit: 5,
+  connectionLimit: 1,
 });
 
 export const prisma =
