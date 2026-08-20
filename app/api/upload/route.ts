@@ -27,21 +27,46 @@ export async function POST(request: Request) {
     const file = formData.get("file");
     const documentType = String(
       formData.get("documentType") || ""
-    );
+    ).trim();
+
+    // -----------------------------------------
+    // Validate file
+    // -----------------------------------------
 
     if (!(file instanceof File)) {
       return NextResponse.json(
-        { error: "No file uploaded." },
+        {
+          error: "No file uploaded.",
+        },
         { status: 400 }
       );
     }
+
+    // -----------------------------------------
+    // Validate document type
+    // -----------------------------------------
 
     if (
       documentType !== "national-id" &&
       documentType !== "recommendation"
     ) {
       return NextResponse.json(
-        { error: "Invalid document type." },
+        {
+          error: "Invalid document type.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // -----------------------------------------
+    // Validate file size
+    // -----------------------------------------
+
+    if (file.size === 0) {
+      return NextResponse.json(
+        {
+          error: "The uploaded file is empty.",
+        },
         { status: 400 }
       );
     }
@@ -56,6 +81,10 @@ export async function POST(request: Request) {
       );
     }
 
+    // -----------------------------------------
+    // Validate file type
+    // -----------------------------------------
+
     if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
         {
@@ -66,11 +95,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const extension =
+    // -----------------------------------------
+    // Get extension
+    // -----------------------------------------
+
+    const originalExtension =
       file.name.split(".").pop()?.toLowerCase() || "file";
+
+    const extension = originalExtension.replace(
+      /[^a-z0-9]/g,
+      ""
+    );
+
+    // -----------------------------------------
+    // Create safe filename
+    // -----------------------------------------
 
     const safeFileName =
       `${documentType}-${user.id}-${Date.now()}.${extension}`;
+
+    // -----------------------------------------
+    // Upload to Vercel Blob
+    // -----------------------------------------
 
     const blob = await put(
       `legal-aid/${user.id}/${safeFileName}`,
@@ -82,19 +128,37 @@ export async function POST(request: Request) {
       }
     );
 
-    return NextResponse.json({
-      success: true,
-      url: blob.url,
+    console.log("FILE UPLOADED:", {
+      userId: user.id,
+      documentType,
       fileName: file.name,
+      blobUrl: blob.url,
     });
+
+    return NextResponse.json(
+      {
+        success: true,
+        url: blob.url,
+        fileName: file.name,
+        documentType,
+      },
+      {
+        status: 200,
+      }
+    );
   } catch (error) {
     console.error("UPLOAD ERROR:", error);
 
     return NextResponse.json(
       {
-        error: "File upload failed.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "File upload failed.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

@@ -4,6 +4,9 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deleteClientCase } from "../ations";
+import { LogOut } from "lucide-react";
+import { logout } from "@/app/login/actions";
+
 
 export default async function ClientDashboard() {
   const user = await requireUser("CLIENT");
@@ -38,12 +41,26 @@ export default async function ClientDashboard() {
             </p>
           </div>
 
-          <Link
-            href="/client/cases/new"
-            className="rounded-lg bg-blue-600 px-5 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            Register New Case
-          </Link>
+          <div className="flex flex-col gap-2 sm:flex-row">
+
+            <Link
+              href="/client/cases/new"
+              className="rounded-lg bg-blue-600 px-5 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              Register New Case
+            </Link>
+
+            <form action={logout}>
+              <button
+                type="submit"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 sm:w-auto"
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </button>
+            </form>
+
+          </div>
 
         </div>
 
@@ -313,11 +330,11 @@ export default async function ClientDashboard() {
                       <Link
                         href={`/client/cases/${c.id}/edit`}
                         className={`rounded-lg px-4 py-2.5 text-center text-sm font-semibold ${c.status === "APPROVED" ||
-                            c.status === "REJECTED" ||
-                            c.status === "RESOLVED" ||
-                            c.status === "CLOSED"
-                            ? "pointer-events-none bg-gray-200 text-gray-400"
-                            : "bg-amber-500 text-white hover:bg-amber-600"
+                          c.status === "REJECTED" ||
+                          c.status === "RESOLVED" ||
+                          c.status === "CLOSED"
+                          ? "pointer-events-none bg-gray-200 text-gray-400"
+                          : "bg-amber-500 text-white hover:bg-amber-600"
                           }`}
                       >
                         Edit Case

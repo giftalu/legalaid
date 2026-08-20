@@ -8,38 +8,36 @@ export async function POST(request: Request) {
 
     if (!user) {
       return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
+        { error: "Unauthorized" },
         { status: 401 }
       );
     }
 
     const body = await request.json();
 
-    const caseType = String(
-      body.caseType || ""
-    ).trim();
+    const caseType =
+      String(body.caseType || "").trim();
 
-    const description = String(
-      body.description || ""
-    ).trim();
+    const description =
+      String(body.description || "").trim();
 
-    const nationalIdUrl = String(
-      body.nationalIdUrl || ""
-    ).trim();
+    const nationalIdUrl =
+      String(body.nationalIdUrl || "").trim();
 
-    const nationalIdFileName = String(
-      body.nationalIdFileName || ""
-    ).trim();
+    const nationalIdFileName =
+      String(body.nationalIdFileName || "").trim();
 
-    const recommendationUrl = String(
-      body.recommendationUrl || ""
-    ).trim();
+    const recommendationUrl =
+      String(body.recommendationUrl || "").trim();
 
-    const recommendationFileName = String(
-      body.recommendationFileName || ""
-    ).trim();
+    const recommendationFileName =
+      String(
+        body.recommendationFileName || ""
+      ).trim();
+
+    // -----------------------------------------
+    // Validation
+    // -----------------------------------------
 
     if (!caseType) {
       return NextResponse.json(
@@ -72,15 +70,25 @@ export async function POST(request: Request) {
     if (!recommendationUrl) {
       return NextResponse.json(
         {
-          error: "Recommendation letter is required.",
+          error:
+            "Recommendation letter is required.",
         },
         { status: 400 }
       );
     }
 
-    const caseNumber = `LAB-${new Date().getFullYear()}-${Date.now()
-      .toString()
-      .slice(-6)}`;
+    // -----------------------------------------
+    // Generate case number
+    // -----------------------------------------
+
+    const caseNumber =
+      `LAB-${new Date().getFullYear()}-${Date.now()
+        .toString()
+        .slice(-6)}`;
+
+    // -----------------------------------------
+    // Create case
+    // -----------------------------------------
 
     const newCase = await db.case.create({
       data: {
@@ -94,22 +102,26 @@ export async function POST(request: Request) {
 
         recommendationUrl,
         recommendationFileName,
-
-        status: "PENDING",
-
-        consultationStatus: "NOT_SCHEDULED",
       },
     });
 
     return NextResponse.json(
       {
         success: true,
-        case: newCase,
+        case: {
+          id: newCase.id,
+          caseNumber: newCase.caseNumber,
+        },
       },
-      { status: 201 }
+      {
+        status: 201,
+      }
     );
   } catch (error) {
-    console.error("CREATE CASE ERROR:", error);
+    console.error(
+      "CREATE CASE ERROR:",
+      error
+    );
 
     return NextResponse.json(
       {
@@ -118,7 +130,9 @@ export async function POST(request: Request) {
             ? error.message
             : "Failed to create case.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

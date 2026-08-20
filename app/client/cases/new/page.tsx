@@ -4,6 +4,61 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+type UploadResult = {
+  success?: boolean;
+  url?: string;
+  fileName?: string;
+  documentType?: string;
+  error?: string;
+};
+
+async function uploadFile(
+  file: File,
+  documentType: "national-id" | "recommendation"
+): Promise<UploadResult> {
+  const formData = new FormData();
+
+  formData.append("file", file);
+  formData.append("documentType", documentType);
+
+  const response = await fetch("/api/upload", {
+    method: "POST",
+    body: formData,
+  });
+
+  // Read as text first.
+  const text = await response.text();
+
+  let result: UploadResult;
+
+  try {
+    result = JSON.parse(text);
+  } catch {
+    console.error(
+      "Upload API returned non-JSON:",
+      text
+    );
+
+    throw new Error(
+      `Upload server returned an invalid response (${response.status}).`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      result.error || "File upload failed."
+    );
+  }
+
+  if (!result.url) {
+    throw new Error(
+      "Upload succeeded but no file URL was returned."
+    );
+  }
+
+  return result;
+}
+
 export default function NewCasePage() {
   const router = useRouter();
 
@@ -17,142 +72,203 @@ export default function NewCasePage() {
     useState<File | null>(null);
 
   const [loading, setLoading] = useState(false);
-
   const [error, setError] = useState("");
 
-  async function handleSubmit(
-    event: React.FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
+ async function parseResponse(response: Response) {
+  const contentType = response.headers.get("content-type") || "";
 
-    setError("");
+  if (!contentType.includes("application/json")) {
+    const text = await response.text();
 
-    if (!caseType) {
-      setError("Please select a case type.");
-      return;
-    }
+    console.error(
+      "Non-JSON response:",
+      response.status,
+      text
+    );
 
-    if (description.trim().length < 20) {
-      setError(
-        "Case description must be at least 20 characters."
-      );
-      return;
-    }
-
-    if (!nationalId) {
-      setError("Please upload your National ID.");
-      return;
-    }
-
-    if (!recommendationLetter) {
-      setError(
-        "Please upload a recommendation letter from a village headman, local court or legal officer."
-      );
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // Upload National ID
-      const idFormData = new FormData();
-
-      idFormData.append("file", nationalId);
-      idFormData.append(
-        "documentType",
-        "national-id"
-      );
-
-      const idResponse = await fetch(
-        "/api/upload",
-        {
-          method: "POST",
-          body: idFormData,
-        }
-      );
-
-      const idResult = await idResponse.json();
-
-      if (!idResponse.ok) {
-        throw new Error(
-          idResult.error ||
-          "National ID upload failed."
-        );
-      }
-
-      // Upload recommendation
-      const recommendationFormData =
-        new FormData();
-
-      recommendationFormData.append(
-        "file",
-        recommendationLetter
-      );
-
-      recommendationFormData.append(
-        "documentType",
-        "recommendation"
-      );
-
-      const recommendationResponse =
-        await fetch("/api/upload", {
-          method: "POST",
-          body: recommendationFormData,
-        });
-
-      const recommendationResult =
-        await recommendationResponse.json();
-
-      if (!recommendationResponse.ok) {
-        throw new Error(
-          recommendationResult.error ||
-          "Recommendation letter upload failed."
-        );
-      }
-
-      // Create case
-      const response = await fetch(
-        "/api/client/cases",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            caseType,
-            description,
-            nationalIdUrl: idResult.url,
-            nationalIdFileName:
-              idResult.fileName,
-            recommendationUrl:
-              recommendationResult.url,
-            recommendationFileName:
-              recommendationResult.fileName,
-          }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          result.error ||
-          "Failed to create case."
-        );
-      }
-
-      router.push("/client/dashboard");
-      router.refresh();
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong."
-      );
-    } finally {
-      setLoading(false);
-    }
+    throw new Error(
+      `Server returned ${response.status} instead of JSON.`
+    );
   }
+
+  return response.json();
+}
+
+async function handleSubmit(
+  event: React.FormEvent<HTMLFormElement>
+) {
+  event.preventDefault();
+
+  setError("");
+
+  if (!caseType) {
+    setError("Please select a case type.");
+    return;
+  }
+
+  if (description.trim().length < 20) {
+    setError(
+      "Case description must be at least 20 characters."
+    );
+    return;
+  }
+
+  if (!nationalId) {
+    setError("Please upload your National ID.");
+    return;
+  }
+
+  if (!recommendationLetter) {
+    setError(
+      "Please upload a recommendation letter from a village headman, local court or legal officer."
+    );
+    return;
+  }
+
+  if (nationalId.size > 5 * 1024 * 1024) {
+    setError("National ID must not exceed 5 MB.");
+    return;
+  }
+
+  if (recommendationLetter.size > 5 * 1024 * 1024) {
+    setError("Recommendation letter must not exceed 5 MB.");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    // ============================================
+    // NATIONAL ID
+    // ============================================
+
+    const idFormData = new FormData();
+
+    idFormData.append("file", nationalId);
+    idFormData.append(
+      "documentType",
+      "national-id"
+    );
+
+    const idResponse = await fetch(
+      "/api/upload",
+      {
+        method: "POST",
+        body: idFormData,
+      }
+    );
+
+    const idResult = await parseResponse(idResponse);
+
+    if (!idResponse.ok) {
+      throw new Error(
+        idResult.error ||
+          "National ID upload failed."
+      );
+    }
+
+    if (!idResult.url) {
+      throw new Error(
+        "National ID upload succeeded but no file URL was returned."
+      );
+    }
+
+    // ============================================
+    // RECOMMENDATION LETTER
+    // ============================================
+
+    const recommendationFormData =
+      new FormData();
+
+    recommendationFormData.append(
+      "file",
+      recommendationLetter
+    );
+
+    recommendationFormData.append(
+      "documentType",
+      "recommendation"
+    );
+
+    const recommendationResponse =
+      await fetch("/api/upload", {
+        method: "POST",
+        body: recommendationFormData,
+      });
+
+    const recommendationResult =
+      await parseResponse(
+        recommendationResponse
+      );
+
+    if (!recommendationResponse.ok) {
+      throw new Error(
+        recommendationResult.error ||
+          "Recommendation letter upload failed."
+      );
+    }
+
+    if (!recommendationResult.url) {
+      throw new Error(
+        "Recommendation upload succeeded but no file URL was returned."
+      );
+    }
+
+    // ============================================
+    // CREATE CASE
+    // ============================================
+
+    const response = await fetch(
+      "/api/client/cases",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          caseType,
+          description,
+
+          nationalIdUrl:
+            idResult.url,
+
+          nationalIdFileName:
+            idResult.fileName,
+
+          recommendationUrl:
+            recommendationResult.url,
+
+          recommendationFileName:
+            recommendationResult.fileName,
+        }),
+      }
+    );
+
+    const result = await parseResponse(
+      response
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+          "Failed to create case."
+      );
+    }
+
+    router.push("/client/dashboard");
+    router.refresh();
+  } catch (error) {
+    console.error("CASE SUBMISSION ERROR:", error);
+
+    setError(
+      error instanceof Error
+        ? error.message
+        : "Something went wrong."
+    );
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
@@ -170,6 +286,8 @@ export default function NewCasePage() {
           className="mt-6 space-y-6 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
         >
 
+          {/* Header */}
+
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
               Register a Case
@@ -181,6 +299,8 @@ export default function NewCasePage() {
             </p>
           </div>
 
+          {/* Error */}
+
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               {error}
@@ -188,6 +308,7 @@ export default function NewCasePage() {
           )}
 
           {/* Case Type */}
+
           <div>
             <label
               htmlFor="caseType"
@@ -228,6 +349,7 @@ export default function NewCasePage() {
           </div>
 
           {/* Description */}
+
           <div>
             <label
               htmlFor="description"
@@ -255,6 +377,7 @@ export default function NewCasePage() {
           </div>
 
           {/* National ID */}
+
           <div className="rounded-xl border border-gray-200 p-5">
 
             <h2 className="font-semibold text-gray-900">
@@ -262,32 +385,24 @@ export default function NewCasePage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-500">
-              Upload a clear image or PDF of your National ID.
+              Upload a clear image or PDF of your
+              National ID.
             </p>
 
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp,application/pdf"
               onChange={(e) =>
-                setNationalId(e.target.files?.[0] || null)
+                setNationalId(
+                  e.target.files?.[0] || null
+                )
               }
-              className="mt-4 block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-700
-    file:mr-4
-    file:cursor-pointer
-    file:border-0
-    file:border-r
-    file:border-gray-300
-    file:bg-blue-600
-    file:px-4
-    file:py-2.5
-    file:font-semibold
-    file:text-white
-    hover:file:bg-blue-700"
               required
+              className="mt-4 block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-700 file:mr-4 file:border-0 file:border-r file:border-gray-300 file:bg-blue-600 file:px-4 file:py-2.5 file:font-semibold file:text-white hover:file:bg-blue-700"
             />
 
             {nationalId && (
-              <p className="mt-2 text-xs text-green-700">
+              <p className="mt-2 break-all text-xs text-green-700">
                 Selected: {nationalId.name}
               </p>
             )}
@@ -299,6 +414,7 @@ export default function NewCasePage() {
           </div>
 
           {/* Recommendation */}
+
           <div className="rounded-xl border border-gray-200 p-5">
 
             <h2 className="font-semibold text-gray-900">
@@ -306,8 +422,7 @@ export default function NewCasePage() {
             </h2>
 
             <p className="mt-1 text-sm leading-6 text-gray-500">
-              Upload a recommendation letter from one
-              of the following:
+              Upload a recommendation letter from:
             </p>
 
             <ul className="mt-2 list-disc pl-5 text-sm text-gray-600">
@@ -324,23 +439,12 @@ export default function NewCasePage() {
                   e.target.files?.[0] || null
                 )
               }
-              className="mt-4 block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-700
-    file:mr-4
-    file:cursor-pointer
-    file:border-0
-    file:border-r
-    file:border-gray-300
-    file:bg-blue-600
-    file:px-4
-    file:py-2.5
-    file:font-semibold
-    file:text-white
-    hover:file:bg-blue-700"
               required
+              className="mt-4 block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-700 file:mr-4 file:border-0 file:border-r file:border-gray-300 file:bg-blue-600 file:px-4 file:py-2.5 file:font-semibold file:text-white hover:file:bg-blue-700"
             />
 
             {recommendationLetter && (
-              <p className="mt-2 text-xs text-green-700">
+              <p className="mt-2 break-all text-xs text-green-700">
                 Selected:{" "}
                 {recommendationLetter.name}
               </p>
@@ -353,21 +457,21 @@ export default function NewCasePage() {
           </div>
 
           {/* Notice */}
-          <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
 
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
             <p className="font-semibold text-blue-900">
               Required documents
             </p>
 
             <p className="mt-1 text-sm leading-6 text-blue-800">
-              Your National ID and recommendation letter
-              will be attached to your case for review by
-              the legal officer.
+              Your National ID and recommendation
+              letter will be attached to your case
+              for review by the legal officer.
             </p>
-
           </div>
 
           {/* Buttons */}
+
           <div className="flex flex-col gap-3 sm:flex-row">
 
             <button

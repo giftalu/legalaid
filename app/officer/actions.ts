@@ -9,6 +9,9 @@ import {
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+
+
+
 /**
  * Approve or reject a case
  */
@@ -221,6 +224,7 @@ export async function deleteCase(formData: FormData) {
       id,
     },
   });
+  
 
   revalidatePath("/officer/dashboard");
   revalidatePath("/client/dashboard");

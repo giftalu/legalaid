@@ -14,3 +14,12 @@ export async function login(formData: FormData) {
   store.set(process.env.SESSION_COOKIE || "legal_aid_session", String(user.id), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" });
   redirect(user.role === "CLIENT" ? "/client/dashboard" : "/officer/dashboard");
 }
+const COOKIE_NAME =
+  process.env.SESSION_COOKIE || "legal_aid_session";
+export async function logout() {
+  const cookieStore = await cookies();
+
+  cookieStore.delete(COOKIE_NAME);
+
+  redirect("/login");
+}
