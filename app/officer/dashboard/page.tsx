@@ -8,6 +8,7 @@ import DeleteCaseButton from "@/app/officer/components/DeleteCaseButton";
 import { logout } from "@/app/login/actions";
 import { LogOut, Plus } from "lucide-react";
 
+
 import {
   updateCaseStatus,
   scheduleConsultation,
@@ -21,6 +22,60 @@ export default async function OfficerDashboard() {
   if (!officer) {
     redirect("/login");
   }
+  const [
+    totalCases,
+    pendingCases,
+    approvedCases,
+    rejectedCases,
+    inProgressCases,
+    scheduledConsultations,
+    resolvedCases,
+    closedCases,
+  ] = await Promise.all([
+    db.case.count(),
+
+    db.case.count({
+      where: {
+        status: "PENDING",
+      },
+    }),
+
+    db.case.count({
+      where: {
+        status: "APPROVED",
+      },
+    }),
+
+    db.case.count({
+      where: {
+        status: "REJECTED",
+      },
+    }),
+
+    db.case.count({
+      where: {
+        status: "IN_PROGRESS",
+      },
+    }),
+
+    db.case.count({
+      where: {
+        consultationStatus: "SCHEDULED",
+      },
+    }),
+
+    db.case.count({
+      where: {
+        status: "RESOLVED",
+      },
+    }),
+
+    db.case.count({
+      where: {
+        status: "CLOSED",
+      },
+    }),
+  ]);
 
   const cases = await db.case.findMany({
     include: {
@@ -35,59 +90,128 @@ export default async function OfficerDashboard() {
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-6xl">
 
-   {/* Header */}
-<header className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
-  <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        {/* Header */}
+        <header className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
 
-    {/* User information */}
-    <div className="flex items-center gap-4">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-700">
-        {officer.name
-          ?.split(" ")
-          .map((part) => part[0])
-          .join("")
-          .slice(0, 2)
-          .toUpperCase()}
-      </div>
+            {/* User information */}
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-700">
+                {officer.name
+                  ?.split(" ")
+                  .map((part) => part[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </div>
 
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Client Portal
-        </p>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Client Portal
+                </p>
 
-        <h1 className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">
-          Welcome, {officer.name}
-        </h1>
+                <h1 className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">
+                  Welcome, {officer.name}
+                </h1>
 
-        <p className="mt-1 text-sm text-gray-500">
-          Manage your legal cases and consultations.
-        </p>
-      </div>
-    </div>
+                <p className="mt-1 text-sm text-gray-500">
+                  Manage your legal cases and consultations.
+                </p>
+              </div>
+            </div>
 
-    {/* Actions */}
-    <div className="flex flex-col gap-2 sm:flex-row">
-      <Link
-        href="/client/cases/new"
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-      >
-        <Plus className="h-4 w-4" />
-        Register New Case
-      </Link>
+            {/* Actions */}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <form action={logout}>
+                <button
+                  type="submit"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:w-auto"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign Out
+                </button>
+              </form>
+            </div>
 
-      <form action={logout}>
-        <button
-          type="submit"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:w-auto"
-        >
-          <LogOut className="h-4 w-4" />
-          Sign Out
-        </button>
-      </form>
-    </div>
+          </div>
+        </header>
+        {/* ===================================================== */}
+        {/* CASE COUNTERS */}
+        {/* ===================================================== */}
 
-  </div>
-</header>
+        <section className="mb-8">
+
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-gray-900">
+              Case Overview
+            </h2>
+
+            <p className="text-sm text-gray-500">
+              Current status of all client cases.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
+
+            <CounterCard
+              title="Total"
+              count={totalCases}
+              className="border-gray-200 bg-white"
+              textClass="text-gray-900"
+            />
+
+            <CounterCard
+              title="Pending"
+              count={pendingCases}
+              className="border-yellow-200 bg-yellow-50"
+              textClass="text-yellow-700"
+            />
+
+            <CounterCard
+              title="Approved"
+              count={approvedCases}
+              className="border-green-200 bg-green-50"
+              textClass="text-green-700"
+            />
+
+            <CounterCard
+              title="Rejected"
+              count={rejectedCases}
+              className="border-red-200 bg-red-50"
+              textClass="text-red-700"
+            />
+
+            <CounterCard
+              title="In Progress"
+              count={inProgressCases}
+              className="border-blue-200 bg-blue-50"
+              textClass="text-blue-700"
+            />
+
+            <CounterCard
+              title="Consultations"
+              count={scheduledConsultations}
+              className="border-purple-200 bg-purple-50"
+              textClass="text-purple-700"
+            />
+
+            <CounterCard
+              title="Resolved"
+              count={resolvedCases}
+              className="border-indigo-200 bg-indigo-50"
+              textClass="text-indigo-700"
+            />
+
+            <CounterCard
+              title="Closed"
+              count={closedCases}
+              className="border-gray-200 bg-gray-100"
+              textClass="text-gray-700"
+            />
+
+          </div>
+
+        </section>
         {/* Cases */}
         {cases.length === 0 ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
@@ -557,5 +681,32 @@ function StatusBadge({
     >
       {status.replaceAll("_", " ")}
     </span>
+  );
+}
+function CounterCard({
+  title,
+  count,
+  className,
+  textClass,
+}: {
+  title: string;
+  count: number;
+  className: string;
+  textClass: string;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border p-4 shadow-sm ${className}`}
+    >
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        {title}
+      </p>
+
+      <p
+        className={`mt-2 text-3xl font-bold ${textClass}`}
+      >
+        {count}
+      </p>
+    </div>
   );
 }
