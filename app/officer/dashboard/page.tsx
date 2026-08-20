@@ -42,7 +42,7 @@ export default async function OfficerDashboard() {
     {/* User information */}
     <div className="flex items-center gap-4">
       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-700">
-        {user.name
+        {officer.name
           ?.split(" ")
           .map((part) => part[0])
           .join("")
@@ -56,7 +56,7 @@ export default async function OfficerDashboard() {
         </p>
 
         <h1 className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">
-          Welcome, {user.name}
+          Welcome, {officer.name}
         </h1>
 
         <p className="mt-1 text-sm text-gray-500">
