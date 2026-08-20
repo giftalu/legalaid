@@ -7,27 +7,15 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Role {
-  CLIENT
-  OFFICER
-  ADMIN
-}
-
-enum CaseStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
 model User {
   id           Int      @id @default(autoincrement())
   name         String
   email        String   @unique
   passwordHash String
   role         Role     @default(CLIENT)
-  cases        Case[]
-  reviewed    Case[]   @relation("ReviewedCases")
   createdAt    DateTime @default(now())
+  reviewed     Case[]   @relation("ReviewedCases")
+  cases        Case[]
 }
 
 model Case {
@@ -39,11 +27,23 @@ model Case {
   status         CaseStatus @default(PENDING)
   officerComment String?
   reviewedById   Int?
-  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviewedBy     User?      @relation("ReviewedCases", fields: [reviewedById], references: [id])
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
+  reviewedBy     User?      @relation("ReviewedCases", fields: [reviewedById], references: [id])
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
+}
+
+enum Role {
+  CLIENT
+  OFFICER
+  ADMIN
+}
+
+enum CaseStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }

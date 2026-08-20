@@ -1,5 +1,6 @@
 import "dotenv/config";
-import { PrismaNeon } from "@prisma/adapter-neon";
+
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
@@ -10,18 +11,16 @@ if (!process.env.DATABASE_URL) {
   throw new Error("Missing required environment variable: DATABASE_URL");
 }
 
-const adapter = new PrismaNeon({
+const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL,
 });
 
-export const prisma =
+export const db =
   globalForPrisma.prisma ??
   new PrismaClient({
     adapter,
   });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+  globalForPrisma.prisma = db;
 }
-
-export const db = prisma;
