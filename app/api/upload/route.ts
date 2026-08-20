@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       `legal-aid/${user.id}/${safeFileName}`,
       file,
       {
-        access: "public",
+        access: "private",
         addRandomSuffix: true,
         contentType: file.type,
       }
