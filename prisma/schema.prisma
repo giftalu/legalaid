@@ -14,23 +14,42 @@ model User {
   passwordHash String
   role         Role     @default(CLIENT)
   createdAt    DateTime @default(now())
-  reviewed     Case[]   @relation("ReviewedCases")
-  cases        Case[]
+
+  reviewed Case[] @relation("ReviewedCases")
+  cases    Case[]
 }
 
 model Case {
-  id             Int        @id @default(autoincrement())
-  caseNumber     String     @unique
-  userId         Int
-  caseType       String
-  description    String
-  status         CaseStatus @default(PENDING)
+  id          Int    @id @default(autoincrement())
+  caseNumber  String @unique
+  userId      Int
+  caseType    String
+  description String
+
+  // Case status
+  status CaseStatus @default(PENDING)
+
+  // Officer information
   officerComment String?
   reviewedById   Int?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  reviewedBy     User?      @relation("ReviewedCases", fields: [reviewedById], references: [id])
-  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Client documents
+  nationalIdUrl      String?
+  nationalIdFileName String?
+
+  recommendationUrl      String?
+  recommendationFileName String?
+
+  // Consultation
+  consultationAt     DateTime?
+  consultationStatus ConsultationStatus @default(NOT_SCHEDULED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviewedBy User? @relation("ReviewedCases", fields: [reviewedById], references: [id])
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
@@ -46,4 +65,17 @@ enum CaseStatus {
   PENDING
   APPROVED
   REJECTED
+  IN_REVIEW
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ConsultationStatus {
+  NOT_SCHEDULED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
 }

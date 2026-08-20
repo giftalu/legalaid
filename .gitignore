@@ -6,3 +6,4 @@ out
 prisma/*.db
 prisma/*.db-journal
 generated
+.vercel
