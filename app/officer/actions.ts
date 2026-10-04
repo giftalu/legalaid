@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import {
   CaseStatus,
   ConsultationStatus,
-} from "@/generated/prisma/client";
+} from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
