@@ -1,8 +1,39 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-export async function POST(request: Request) {
+function generateCaseNumber() {
+  const year = new Date().getFullYear();
+
+  const random = Math.floor(
+    100000 + Math.random() * 900000
+  );
+
+  return `LAB-${year}-${random}`;
+}
+
+function optionalString(value: unknown) {
+  const result = String(value ?? "").trim();
+  return result || null;
+}
+
+function optionalNumber(value: unknown) {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : null;
+}
+
+export async function POST(request: NextRequest) {
   try {
     const user = await requireUser("CLIENT");
 
@@ -15,35 +46,29 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    const caseType =
-      String(body.caseType || "").trim();
+    // ============================================
+    // REQUIRED FIELDS
+    // ============================================
 
-    const description =
-      String(body.description || "").trim();
+    const caseType = String(
+      body.caseType ?? ""
+    ).trim();
 
-    const nationalIdUrl =
-      String(body.nationalIdUrl || "").trim();
+    const description = String(
+      body.description ?? ""
+    ).trim();
 
-    const nationalIdFileName =
-      String(body.nationalIdFileName || "").trim();
+    const applicantFullName = String(
+      body.applicantFullName ?? ""
+    ).trim();
 
-    const recommendationUrl =
-      String(body.recommendationUrl || "").trim();
-
-    const recommendationFileName =
-      String(
-        body.recommendationFileName || ""
-      ).trim();
-
-    // -----------------------------------------
-    // Validation
-    // -----------------------------------------
+    const respondentName = String(
+      body.respondentName ?? ""
+    ).trim();
 
     if (!caseType) {
       return NextResponse.json(
-        {
-          error: "Case type is required.",
-        },
+        { error: "Case type is required." },
         { status: 400 }
       );
     }
@@ -58,64 +83,191 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!nationalIdUrl) {
-      return NextResponse.json(
-        {
-          error: "National ID is required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!recommendationUrl) {
+    if (!applicantFullName) {
       return NextResponse.json(
         {
           error:
-            "Recommendation letter is required.",
+            "Applicant name is required.",
         },
         { status: 400 }
       );
     }
 
-    // -----------------------------------------
-    // Generate case number
-    // -----------------------------------------
+    if (!respondentName) {
+      return NextResponse.json(
+        {
+          error:
+            "Respondent name is required.",
+        },
+        { status: 400 }
+      );
+    }
 
-    const caseNumber =
-      `LAB-${new Date().getFullYear()}-${Date.now()
-        .toString()
-        .slice(-6)}`;
+    // ============================================
+    // CASE NUMBER
+    // ============================================
 
-    // -----------------------------------------
-    // Create case
-    // -----------------------------------------
+    let caseNumber = generateCaseNumber();
+
+    while (
+      await db.case.findUnique({
+        where: { caseNumber },
+        select: { id: true },
+      })
+    ) {
+      caseNumber = generateCaseNumber();
+    }
+
+    // ============================================
+    // CREATE CASE
+    // ============================================
 
     const newCase = await db.case.create({
       data: {
         caseNumber,
+
         userId: user.id,
+
+        // Applicant
+        applicantFullName,
+        applicantNationalId:
+          optionalString(
+            body.applicantNationalId
+          ),
+        applicantPhone:
+          optionalString(
+            body.applicantPhone
+          ),
+        applicantEmail:
+          optionalString(
+            body.applicantEmail
+          ),
+        applicantAddress:
+          optionalString(
+            body.applicantAddress
+          ),
+        applicantDistrict:
+          optionalString(
+            body.applicantDistrict
+          ),
+        applicantTraditionalAuthority:
+          optionalString(
+            body.applicantTraditionalAuthority
+          ),
+        applicantVillage:
+          optionalString(
+            body.applicantVillage
+          ),
+        applicantOccupation:
+          optionalString(
+            body.applicantOccupation
+          ),
+
+        // Respondent
+        respondentName,
+        respondentPhone:
+          optionalString(
+            body.respondentPhone
+          ),
+        respondentAddress:
+          optionalString(
+            body.respondentAddress
+          ),
+        respondentRelationship:
+          optionalString(
+            body.respondentRelationship
+          ),
+
+        // Complaint
         caseType,
         description,
+        incidentLocation:
+          optionalString(
+            body.incidentLocation
+          ),
 
-        nationalIdUrl,
-        nationalIdFileName,
+        complaintDate: body.complaintDate
+          ? new Date(body.complaintDate)
+          : null,
 
-        recommendationUrl,
-        recommendationFileName,
+        // Legal aid
+        legalAidReason:
+          optionalString(
+            body.legalAidReason
+          ),
+
+        previousLegalAssistance:
+          Boolean(
+            body.previousLegalAssistance
+          ),
+
+        previousLegalAssistanceDetails:
+          optionalString(
+            body.previousLegalAssistanceDetails
+          ),
+
+        // Financial
+        employmentStatus:
+          optionalString(
+            body.employmentStatus
+          ),
+
+        occupation:
+          optionalString(
+            body.occupation
+          ),
+
+        monthlyIncome:
+          optionalNumber(
+            body.monthlyIncome
+          ),
+
+        otherIncome:
+          optionalNumber(
+            body.otherIncome
+          ),
+
+        numberOfDependants:
+          body.numberOfDependants !== ""
+            ? Number(
+                body.numberOfDependants
+              )
+            : null,
+
+        financialCircumstances:
+          optionalString(
+            body.financialCircumstances
+          ),
+
+        // Documents
+        nationalIdUrl:
+          optionalString(
+            body.nationalIdUrl
+          ),
+
+        nationalIdFileName:
+          optionalString(
+            body.nationalIdFileName
+          ),
+
+        recommendationUrl:
+          optionalString(
+            body.recommendationUrl
+          ),
+
+        recommendationFileName:
+          optionalString(
+            body.recommendationFileName
+          ),
       },
     });
 
     return NextResponse.json(
       {
         success: true,
-        case: {
-          id: newCase.id,
-          caseNumber: newCase.caseNumber,
-        },
+        case: newCase,
       },
-      {
-        status: 201,
-      }
+      { status: 201 }
     );
   } catch (error) {
     console.error(
@@ -126,13 +278,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : "Failed to create case.",
+          "Failed to create case. Please try again.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }

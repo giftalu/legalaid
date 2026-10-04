@@ -1,6 +1,5 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -14,45 +13,109 @@ model User {
   passwordHash String
   role         Role     @default(CLIENT)
   createdAt    DateTime @default(now())
-
-  reviewed Case[] @relation("ReviewedCases")
-  cases    Case[]
+  reviewed     Case[]   @relation("ReviewedCases")
+  cases        Case[]
 }
 
 model Case {
-  id          Int    @id @default(autoincrement())
-  caseNumber  String @unique
-  userId      Int
-  caseType    String
-  description String
+  id         Int    @id @default(autoincrement())
+  caseNumber String @unique
 
-  // Case status
-  status CaseStatus @default(PENDING)
+  // ============================================
+  // RELATIONSHIPS
+  // ============================================
 
-  // Officer information
+  userId       Int
+  reviewedById Int?
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("ReviewedCases", fields: [reviewedById], references: [id])
+
+  // ============================================
+  // APPLICANT DETAILS
+  // ============================================
+
+  applicantFullName             String
+  applicantNationalId           String?
+  applicantPhone                String?
+  applicantEmail                String?
+  applicantAddress              String?
+  applicantDistrict             String?
+  applicantTraditionalAuthority String?
+  applicantVillage              String?
+  applicantOccupation           String?
+
+  // ============================================
+  // RESPONDENT DETAILS
+  // ============================================
+
+  respondentName         String
+  respondentPhone        String?
+  respondentAddress      String?
+  respondentRelationship String?
+
+  // ============================================
+  // COMPLAINT DETAILS
+  // ============================================
+
+  caseType         String
+  complaintDate    DateTime?
+  incidentLocation String?
+  description      String
+
+  // ============================================
+  // LEGAL AID
+  // ============================================
+
+  legalAidReason                 String?
+  previousLegalAssistance        Boolean @default(false)
+  previousLegalAssistanceDetails String?
+
+  // ============================================
+  // FINANCIAL INFORMATION
+  // ============================================
+
+  employmentStatus       String?
+  occupation             String?
+  monthlyIncome          Decimal? @db.Decimal(12, 2)
+  otherIncome            Decimal? @db.Decimal(12, 2)
+  numberOfDependants     Int?
+  financialCircumstances String?
+
+  // ============================================
+  // CASE STATUS
+  // ============================================
+
+  status         CaseStatus @default(PENDING)
   officerComment String?
-  reviewedById   Int?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
-  // Client documents
-  nationalIdUrl      String?
-  nationalIdFileName String?
+  // ============================================
+  // CONSULTATION
+  // ============================================
 
-  recommendationUrl      String?
-  recommendationFileName String?
-
-  // Consultation
   consultationAt     DateTime?
   consultationStatus ConsultationStatus @default(NOT_SCHEDULED)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // ============================================
+  // DOCUMENTS
+  // ============================================
 
-  reviewedBy User? @relation("ReviewedCases", fields: [reviewedById], references: [id])
+  nationalIdFileName String?
+  nationalIdUrl      String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recommendationFileName String?
+  recommendationUrl      String?
+
+  // ============================================
+  // INDEXES
+  // ============================================
 
   @@index([userId])
   @@index([status])
+  @@index([caseType])
+  @@index([createdAt])
 }
 
 enum Role {

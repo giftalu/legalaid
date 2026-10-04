@@ -12,72 +12,17 @@ type UploadResult = {
   error?: string;
 };
 
-async function uploadFile(
-  file: File,
-  documentType: "national-id" | "recommendation"
-): Promise<UploadResult> {
-  const formData = new FormData();
+async function parseResponse(
+  response: Response
+) {
+  const contentType =
+    response.headers.get("content-type") || "";
 
-  formData.append("file", file);
-  formData.append("documentType", documentType);
-
-  const response = await fetch("/api/upload", {
-    method: "POST",
-    body: formData,
-  });
-
-  // Read as text first.
-  const text = await response.text();
-
-  let result: UploadResult;
-
-  try {
-    result = JSON.parse(text);
-  } catch {
-    console.error(
-      "Upload API returned non-JSON:",
-      text
-    );
-
-    throw new Error(
-      `Upload server returned an invalid response (${response.status}).`
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      result.error || "File upload failed."
-    );
-  }
-
-  if (!result.url) {
-    throw new Error(
-      "Upload succeeded but no file URL was returned."
-    );
-  }
-
-  return result;
-}
-
-export default function NewCasePage() {
-  const router = useRouter();
-
-  const [caseType, setCaseType] = useState("");
-  const [description, setDescription] = useState("");
-
-  const [nationalId, setNationalId] =
-    useState<File | null>(null);
-
-  const [recommendationLetter, setRecommendationLetter] =
-    useState<File | null>(null);
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
- async function parseResponse(response: Response) {
-  const contentType = response.headers.get("content-type") || "";
-
-  if (!contentType.includes("application/json")) {
+  if (
+    !contentType.includes(
+      "application/json"
+    )
+  ) {
     const text = await response.text();
 
     console.error(
@@ -94,185 +39,382 @@ export default function NewCasePage() {
   return response.json();
 }
 
-async function handleSubmit(
-  event: React.FormEvent<HTMLFormElement>
-) {
-  event.preventDefault();
+async function uploadFile(
+  file: File,
+  documentType:
+    | "national-id"
+    | "recommendation"
+): Promise<UploadResult> {
+  const formData = new FormData();
 
-  setError("");
+  formData.append("file", file);
+  formData.append(
+    "documentType",
+    documentType
+  );
 
-  if (!caseType) {
-    setError("Please select a case type.");
-    return;
-  }
-
-  if (description.trim().length < 20) {
-    setError(
-      "Case description must be at least 20 characters."
-    );
-    return;
-  }
-
-  if (!nationalId) {
-    setError("Please upload your National ID.");
-    return;
-  }
-
-  if (!recommendationLetter) {
-    setError(
-      "Please upload a recommendation letter from a village headman, local court or legal officer."
-    );
-    return;
-  }
-
-  if (nationalId.size > 5 * 1024 * 1024) {
-    setError("National ID must not exceed 5 MB.");
-    return;
-  }
-
-  if (recommendationLetter.size > 5 * 1024 * 1024) {
-    setError("Recommendation letter must not exceed 5 MB.");
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    // ============================================
-    // NATIONAL ID
-    // ============================================
-
-    const idFormData = new FormData();
-
-    idFormData.append("file", nationalId);
-    idFormData.append(
-      "documentType",
-      "national-id"
-    );
-
-    const idResponse = await fetch(
-      "/api/upload",
-      {
-        method: "POST",
-        body: idFormData,
-      }
-    );
-
-    const idResult = await parseResponse(idResponse);
-
-    if (!idResponse.ok) {
-      throw new Error(
-        idResult.error ||
-          "National ID upload failed."
-      );
+  const response = await fetch(
+    "/api/upload",
+    {
+      method: "POST",
+      body: formData,
     }
+  );
 
-    if (!idResult.url) {
-      throw new Error(
-        "National ID upload succeeded but no file URL was returned."
-      );
-    }
+  const result =
+    await parseResponse(response);
 
-    // ============================================
-    // RECOMMENDATION LETTER
-    // ============================================
-
-    const recommendationFormData =
-      new FormData();
-
-    recommendationFormData.append(
-      "file",
-      recommendationLetter
+  if (!response.ok) {
+    throw new Error(
+      result.error ||
+        "File upload failed."
     );
-
-    recommendationFormData.append(
-      "documentType",
-      "recommendation"
-    );
-
-    const recommendationResponse =
-      await fetch("/api/upload", {
-        method: "POST",
-        body: recommendationFormData,
-      });
-
-    const recommendationResult =
-      await parseResponse(
-        recommendationResponse
-      );
-
-    if (!recommendationResponse.ok) {
-      throw new Error(
-        recommendationResult.error ||
-          "Recommendation letter upload failed."
-      );
-    }
-
-    if (!recommendationResult.url) {
-      throw new Error(
-        "Recommendation upload succeeded but no file URL was returned."
-      );
-    }
-
-    // ============================================
-    // CREATE CASE
-    // ============================================
-
-    const response = await fetch(
-      "/api/client/cases",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          caseType,
-          description,
-
-          nationalIdUrl:
-            idResult.url,
-
-          nationalIdFileName:
-            idResult.fileName,
-
-          recommendationUrl:
-            recommendationResult.url,
-
-          recommendationFileName:
-            recommendationResult.fileName,
-        }),
-      }
-    );
-
-    const result = await parseResponse(
-      response
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        result.error ||
-          "Failed to create case."
-      );
-    }
-
-    router.push("/client/dashboard");
-    router.refresh();
-  } catch (error) {
-    console.error("CASE SUBMISSION ERROR:", error);
-
-    setError(
-      error instanceof Error
-        ? error.message
-        : "Something went wrong."
-    );
-  } finally {
-    setLoading(false);
   }
+
+  if (!result.url) {
+    throw new Error(
+      "Upload succeeded but no file URL was returned."
+    );
+  }
+
+  return result;
 }
+
+export default function NewCasePage() {
+  const router = useRouter();
+
+  // ============================================
+  // APPLICANT
+  // ============================================
+
+  const [applicantFullName, setApplicantFullName] =
+    useState("");
+
+  const [applicantNationalId, setApplicantNationalId] =
+    useState("");
+
+  const [applicantPhone, setApplicantPhone] =
+    useState("");
+
+  const [applicantEmail, setApplicantEmail] =
+    useState("");
+
+  const [applicantAddress, setApplicantAddress] =
+    useState("");
+
+  const [applicantDistrict, setApplicantDistrict] =
+    useState("");
+
+  const [
+    applicantTraditionalAuthority,
+    setApplicantTraditionalAuthority,
+  ] = useState("");
+
+  const [applicantVillage, setApplicantVillage] =
+    useState("");
+
+  const [
+    applicantOccupation,
+    setApplicantOccupation,
+  ] = useState("");
+
+  // ============================================
+  // RESPONDENT
+  // ============================================
+
+  const [respondentName, setRespondentName] =
+    useState("");
+
+  const [respondentPhone, setRespondentPhone] =
+    useState("");
+
+  const [respondentAddress, setRespondentAddress] =
+    useState("");
+
+  const [
+    respondentRelationship,
+    setRespondentRelationship,
+  ] = useState("");
+
+  // ============================================
+  // COMPLAINT
+  // ============================================
+
+  const [caseType, setCaseType] =
+    useState("");
+
+  const [complaintDate, setComplaintDate] =
+    useState("");
+
+  const [incidentLocation, setIncidentLocation] =
+    useState("");
+
+  const [description, setDescription] =
+    useState("");
+
+  // ============================================
+  // LEGAL AID
+  // ============================================
+
+  const [legalAidReason, setLegalAidReason] =
+    useState("");
+
+  const [
+    previousLegalAssistance,
+    setPreviousLegalAssistance,
+  ] = useState(false);
+
+  const [
+    previousLegalAssistanceDetails,
+    setPreviousLegalAssistanceDetails,
+  ] = useState("");
+
+  // ============================================
+  // FINANCIAL
+  // ============================================
+
+  const [employmentStatus, setEmploymentStatus] =
+    useState("");
+
+  const [occupation, setOccupation] =
+    useState("");
+
+  const [monthlyIncome, setMonthlyIncome] =
+    useState("");
+
+  const [otherIncome, setOtherIncome] =
+    useState("");
+
+  const [
+    numberOfDependants,
+    setNumberOfDependants,
+  ] = useState("");
+
+  const [
+    financialCircumstances,
+    setFinancialCircumstances,
+  ] = useState("");
+
+  // ============================================
+  // DOCUMENTS
+  // ============================================
+
+  const [nationalId, setNationalId] =
+    useState<File | null>(null);
+
+  const [
+    recommendationLetter,
+    setRecommendationLetter,
+  ] = useState<File | null>(null);
+
+  // ============================================
+  // STATE
+  // ============================================
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  // ============================================
+  // SUBMIT
+  // ============================================
+
+  async function handleSubmit(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    setError("");
+
+    if (!applicantFullName.trim()) {
+      setError(
+        "Please provide the applicant's full name."
+      );
+      return;
+    }
+
+    if (!respondentName.trim()) {
+      setError(
+        "Please provide the respondent's name."
+      );
+      return;
+    }
+
+    if (!caseType) {
+      setError(
+        "Please select a case type."
+      );
+      return;
+    }
+
+    if (description.trim().length < 20) {
+      setError(
+        "Case description must be at least 20 characters."
+      );
+      return;
+    }
+
+    if (!nationalId) {
+      setError(
+        "Please upload your National ID."
+      );
+      return;
+    }
+
+    if (!recommendationLetter) {
+      setError(
+        "Please upload a recommendation letter."
+      );
+      return;
+    }
+
+    if (
+      nationalId.size >
+      5 * 1024 * 1024
+    ) {
+      setError(
+        "National ID must not exceed 5 MB."
+      );
+      return;
+    }
+
+    if (
+      recommendationLetter.size >
+      5 * 1024 * 1024
+    ) {
+      setError(
+        "Recommendation letter must not exceed 5 MB."
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // ========================================
+      // UPLOAD NATIONAL ID
+      // ========================================
+
+      const idResult =
+        await uploadFile(
+          nationalId,
+          "national-id"
+        );
+
+      // ========================================
+      // UPLOAD RECOMMENDATION
+      // ========================================
+
+      const recommendationResult =
+        await uploadFile(
+          recommendationLetter,
+          "recommendation"
+        );
+
+      // ========================================
+      // CREATE CASE
+      // ========================================
+
+      const response =
+        await fetch(
+          "/api/client/cases",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              applicantFullName,
+              applicantNationalId,
+              applicantPhone,
+              applicantEmail,
+              applicantAddress,
+              applicantDistrict,
+              applicantTraditionalAuthority,
+              applicantVillage,
+              applicantOccupation,
+
+              respondentName,
+              respondentPhone,
+              respondentAddress,
+              respondentRelationship,
+
+              caseType,
+              complaintDate,
+              incidentLocation,
+              description,
+
+              legalAidReason,
+              previousLegalAssistance,
+              previousLegalAssistanceDetails,
+
+              employmentStatus,
+              occupation,
+              monthlyIncome,
+              otherIncome,
+              numberOfDependants,
+              financialCircumstances,
+
+              nationalIdUrl:
+                idResult.url,
+
+              nationalIdFileName:
+                idResult.fileName,
+
+              recommendationUrl:
+                recommendationResult.url,
+
+              recommendationFileName:
+                recommendationResult.fileName,
+            }),
+          }
+        );
+
+      const result =
+        await parseResponse(
+          response
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Failed to create case."
+        );
+      }
+
+      router.push(
+        "/client/dashboard"
+      );
+
+      router.refresh();
+    } catch (error) {
+      console.error(
+        "CASE SUBMISSION ERROR:",
+        error
+      );
+
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ============================================
+  // UI
+  // ============================================
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-4xl">
 
         <Link
           href="/client/dashboard"
@@ -283,10 +425,12 @@ async function handleSubmit(
 
         <form
           onSubmit={handleSubmit}
-          className="mt-6 space-y-6 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
+          className="mt-6 space-y-8 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
         >
 
-          {/* Header */}
+          {/* ================================= */}
+          {/* HEADER */}
+          {/* ================================= */}
 
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
@@ -294,12 +438,12 @@ async function handleSubmit(
             </h1>
 
             <p className="mt-1 text-sm text-gray-500">
-              Provide your case details and required
-              supporting documents.
+              Complete the information below
+              to submit your legal aid case.
             </p>
           </div>
 
-          {/* Error */}
+          {/* ERROR */}
 
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -307,180 +451,409 @@ async function handleSubmit(
             </div>
           )}
 
-          {/* Case Type */}
+          {/* ================================= */}
+          {/* 1. APPLICANT */}
+          {/* ================================= */}
 
-          <div>
-            <label
-              htmlFor="caseType"
-              className="mb-2 block text-sm font-semibold text-gray-700"
-            >
-              Case Type
-            </label>
+          <section className="rounded-xl border border-gray-200 p-5">
 
-            <select
-              id="caseType"
-              value={caseType}
-              onChange={(e) =>
-                setCaseType(e.target.value)
-              }
-              required
-              className="w-full rounded-lg border border-gray-300 bg-white p-3 outline-none focus:border-blue-500"
-            >
-              <option value="">
-                Select case type
-              </option>
-
-              <option value="Family">
-                Family
-              </option>
-
-              <option value="Land">
-                Land
-              </option>
-
-              <option value="Criminal">
-                Criminal
-              </option>
-
-              <option value="Civil">
-                Civil
-              </option>
-            </select>
-          </div>
-
-          {/* Description */}
-
-          <div>
-            <label
-              htmlFor="description"
-              className="mb-2 block text-sm font-semibold text-gray-700"
-            >
-              Case Description
-            </label>
-
-            <textarea
-              id="description"
-              value={description}
-              onChange={(e) =>
-                setDescription(e.target.value)
-              }
-              required
-              minLength={20}
-              rows={8}
-              placeholder="Describe your legal matter in detail..."
-              className="w-full resize-y rounded-lg border border-gray-300 p-3 text-sm leading-6 outline-none focus:border-blue-500"
-            />
-
-            <p className="mt-1 text-xs text-gray-500">
-              Minimum 20 characters.
-            </p>
-          </div>
-
-          {/* National ID */}
-
-          <div className="rounded-xl border border-gray-200 p-5">
-
-            <h2 className="font-semibold text-gray-900">
-              National ID
+            <h2 className="text-lg font-bold text-gray-900">
+              1. Applicant Details
             </h2>
 
             <p className="mt-1 text-sm text-gray-500">
-              Upload a clear image or PDF of your
-              National ID.
+              Provide the details of the person
+              seeking legal assistance.
             </p>
 
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              onChange={(e) =>
-                setNationalId(
-                  e.target.files?.[0] || null
-                )
-              }
-              required
-              className="mt-4 block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-700 file:mr-4 file:border-0 file:border-r file:border-gray-300 file:bg-blue-600 file:px-4 file:py-2.5 file:font-semibold file:text-white hover:file:bg-blue-700"
-            />
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
 
-            {nationalId && (
-              <p className="mt-2 break-all text-xs text-green-700">
-                Selected: {nationalId.name}
-              </p>
-            )}
+              <Input
+                label="Full Name"
+                value={applicantFullName}
+                onChange={setApplicantFullName}
+                required
+              />
 
-            <p className="mt-2 text-xs text-gray-500">
-              Maximum file size: 5 MB.
-            </p>
+              <Input
+                label="National ID Number"
+                value={applicantNationalId}
+                onChange={setApplicantNationalId}
+              />
 
-          </div>
+              <Input
+                label="Phone Number"
+                value={applicantPhone}
+                onChange={setApplicantPhone}
+              />
 
-          {/* Recommendation */}
+              <Input
+                label="Email"
+                type="email"
+                value={applicantEmail}
+                onChange={setApplicantEmail}
+              />
 
-          <div className="rounded-xl border border-gray-200 p-5">
+              <Input
+                label="District"
+                value={applicantDistrict}
+                onChange={setApplicantDistrict}
+              />
 
-            <h2 className="font-semibold text-gray-900">
-              Recommendation Letter
+              <Input
+                label="Traditional Authority"
+                value={
+                  applicantTraditionalAuthority
+                }
+                onChange={
+                  setApplicantTraditionalAuthority
+                }
+              />
+
+              <Input
+                label="Village"
+                value={applicantVillage}
+                onChange={setApplicantVillage}
+              />
+
+              <Input
+                label="Occupation"
+                value={applicantOccupation}
+                onChange={setApplicantOccupation}
+              />
+
+              <div className="sm:col-span-2">
+                <Textarea
+                  label="Address"
+                  value={applicantAddress}
+                  onChange={setApplicantAddress}
+                />
+              </div>
+
+            </div>
+          </section>
+
+          {/* ================================= */}
+          {/* 2. RESPONDENT */}
+          {/* ================================= */}
+
+          <section className="rounded-xl border border-gray-200 p-5">
+
+            <h2 className="text-lg font-bold text-gray-900">
+              2. Respondent Details
             </h2>
 
-            <p className="mt-1 text-sm leading-6 text-gray-500">
-              Upload a recommendation letter from:
-            </p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
 
-            <ul className="mt-2 list-disc pl-5 text-sm text-gray-600">
-              <li>Village Headman</li>
-              <li>Local Court</li>
-              <li>Legal Officer</li>
-            </ul>
+              <Input
+                label="Respondent Name"
+                value={respondentName}
+                onChange={setRespondentName}
+                required
+              />
 
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              onChange={(e) =>
-                setRecommendationLetter(
-                  e.target.files?.[0] || null
-                )
-              }
-              required
-              className="mt-4 block w-full cursor-pointer rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-700 file:mr-4 file:border-0 file:border-r file:border-gray-300 file:bg-blue-600 file:px-4 file:py-2.5 file:font-semibold file:text-white hover:file:bg-blue-700"
-            />
+              <Input
+                label="Phone Number"
+                value={respondentPhone}
+                onChange={setRespondentPhone}
+              />
 
-            {recommendationLetter && (
-              <p className="mt-2 break-all text-xs text-green-700">
-                Selected:{" "}
-                {recommendationLetter.name}
+              <Input
+                label="Relationship to Applicant"
+                value={
+                  respondentRelationship
+                }
+                onChange={
+                  setRespondentRelationship
+                }
+              />
+
+              <Input
+                label="Address"
+                value={respondentAddress}
+                onChange={setRespondentAddress}
+              />
+
+            </div>
+          </section>
+
+          {/* ================================= */}
+          {/* 3. COMPLAINT */}
+          {/* ================================= */}
+
+          <section className="rounded-xl border border-gray-200 p-5">
+
+            <h2 className="text-lg font-bold text-gray-900">
+              3. Complaint Details
+            </h2>
+
+            <div className="mt-5 space-y-4">
+
+              <div className="grid gap-4 sm:grid-cols-2">
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-700">
+                    Case Type
+                  </label>
+
+                  <select
+                    value={caseType}
+                    onChange={(e) =>
+                      setCaseType(
+                        e.target.value
+                      )
+                    }
+                    required
+                    className="w-full rounded-lg border border-gray-300 bg-white p-3 outline-none focus:border-blue-500"
+                  >
+                    <option value="">
+                      Select case type
+                    </option>
+
+                    <option value="Family">
+                      Family
+                    </option>
+
+                    <option value="Land">
+                      Land
+                    </option>
+
+                    <option value="Criminal">
+                      Criminal
+                    </option>
+
+                    <option value="Civil">
+                      Civil
+                    </option>
+                  </select>
+                </div>
+
+                <Input
+                  label="Date of Incident"
+                  type="date"
+                  value={complaintDate}
+                  onChange={
+                    setComplaintDate
+                  }
+                />
+
+              </div>
+
+              <Input
+                label="Location of Incident"
+                value={incidentLocation}
+                onChange={
+                  setIncidentLocation
+                }
+              />
+
+              <Textarea
+                label="Detailed Complaint"
+                value={description}
+                onChange={setDescription}
+                required
+                rows={8}
+                placeholder="Describe what happened, when it happened, who was involved and what assistance you require."
+              />
+
+              <p className="text-xs text-gray-500">
+                Minimum 20 characters.
               </p>
-            )}
 
-            <p className="mt-2 text-xs text-gray-500">
-              Maximum file size: 5 MB.
+            </div>
+          </section>
+
+          {/* ================================= */}
+          {/* 4. LEGAL AID */}
+          {/* ================================= */}
+
+          <section className="rounded-xl border border-gray-200 p-5">
+
+            <h2 className="text-lg font-bold text-gray-900">
+              4. Legal Aid
+            </h2>
+
+            <div className="mt-5 space-y-4">
+
+              <Textarea
+                label="Why do you require legal aid?"
+                value={legalAidReason}
+                onChange={
+                  setLegalAidReason
+                }
+                rows={5}
+              />
+
+              <label className="flex items-center gap-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={
+                    previousLegalAssistance
+                  }
+                  onChange={(e) =>
+                    setPreviousLegalAssistance(
+                      e.target.checked
+                    )
+                  }
+                  className="h-4 w-4"
+                />
+
+                Have you received legal assistance before?
+              </label>
+
+              {previousLegalAssistance && (
+                <Textarea
+                  label="Previous Legal Assistance Details"
+                  value={
+                    previousLegalAssistanceDetails
+                  }
+                  onChange={
+                    setPreviousLegalAssistanceDetails
+                  }
+                  rows={4}
+                />
+              )}
+
+            </div>
+          </section>
+
+          {/* ================================= */}
+          {/* 5. FINANCIAL */}
+          {/* ================================= */}
+
+          <section className="rounded-xl border border-gray-200 p-5">
+
+            <h2 className="text-lg font-bold text-gray-900">
+              5. Financial Information
+            </h2>
+
+            <p className="mt-1 text-sm text-gray-500">
+              This information helps assess
+              eligibility for legal aid.
             </p>
 
-          </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
 
-          {/* Notice */}
+              <Input
+                label="Employment Status"
+                value={employmentStatus}
+                onChange={
+                  setEmploymentStatus
+                }
+                placeholder="Employed, unemployed, self-employed..."
+              />
+
+              <Input
+                label="Occupation"
+                value={occupation}
+                onChange={setOccupation}
+              />
+
+              <Input
+                label="Monthly Income"
+                type="number"
+                value={monthlyIncome}
+                onChange={setMonthlyIncome}
+              />
+
+              <Input
+                label="Other Income"
+                type="number"
+                value={otherIncome}
+                onChange={setOtherIncome}
+              />
+
+              <Input
+                label="Number of Dependants"
+                type="number"
+                value={numberOfDependants}
+                onChange={
+                  setNumberOfDependants
+                }
+              />
+
+              <div className="sm:col-span-2">
+                <Textarea
+                  label="Financial Circumstances"
+                  value={
+                    financialCircumstances
+                  }
+                  onChange={
+                    setFinancialCircumstances
+                  }
+                  rows={5}
+                  placeholder="Explain your financial circumstances..."
+                />
+              </div>
+
+            </div>
+          </section>
+
+          {/* ================================= */}
+          {/* 6. DOCUMENTS */}
+          {/* ================================= */}
+
+          <section className="rounded-xl border border-gray-200 p-5">
+
+            <h2 className="text-lg font-bold text-gray-900">
+              6. Supporting Documents
+            </h2>
+
+            <div className="mt-5 space-y-6">
+
+              <FileUpload
+                title="National ID"
+                description="Upload a clear image or PDF of your National ID."
+                file={nationalId}
+                onChange={setNationalId}
+                required
+              />
+
+              <FileUpload
+                title="Recommendation Letter"
+                description="Upload a recommendation letter from a Village Headman, Local Court or Legal Officer."
+                file={recommendationLetter}
+                onChange={
+                  setRecommendationLetter
+                }
+                required
+              />
+
+            </div>
+          </section>
+
+          {/* ================================= */}
+          {/* NOTICE */}
+          {/* ================================= */}
 
           <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+
             <p className="font-semibold text-blue-900">
-              Required documents
+              Before submitting
             </p>
 
             <p className="mt-1 text-sm leading-6 text-blue-800">
-              Your National ID and recommendation
-              letter will be attached to your case
-              for review by the legal officer.
+              Please make sure the information
+              provided is accurate and that both
+              required documents are clear and
+              readable.
             </p>
+
           </div>
 
-          {/* Buttons */}
+          {/* ================================= */}
+          {/* BUTTONS */}
+          {/* ================================= */}
 
           <div className="flex flex-col gap-3 sm:flex-row">
 
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading
-                ? "Submitting..."
+                ? "Submitting Case..."
                 : "Submit Case"}
             </button>
 
@@ -494,8 +867,155 @@ async function handleSubmit(
           </div>
 
         </form>
-
       </div>
     </main>
+  );
+}
+
+// ============================================
+// REUSABLE INPUT
+// ============================================
+
+function Input({
+  label,
+  value,
+  onChange,
+  type = "text",
+  required = false,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-semibold text-gray-700">
+        {label}
+        {required && (
+          <span className="ml-1 text-red-500">
+            *
+          </span>
+        )}
+      </label>
+
+      <input
+        type={type}
+        value={value}
+        required={required}
+        placeholder={placeholder}
+        onChange={(e) =>
+          onChange(e.target.value)
+        }
+        className="w-full rounded-lg border border-gray-300 bg-white p-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+      />
+    </div>
+  );
+}
+
+// ============================================
+// REUSABLE TEXTAREA
+// ============================================
+
+function Textarea({
+  label,
+  value,
+  onChange,
+  rows = 4,
+  required = false,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  rows?: number;
+  required?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-semibold text-gray-700">
+        {label}
+        {required && (
+          <span className="ml-1 text-red-500">
+            *
+          </span>
+        )}
+      </label>
+
+      <textarea
+        value={value}
+        rows={rows}
+        required={required}
+        placeholder={placeholder}
+        onChange={(e) =>
+          onChange(e.target.value)
+        }
+        className="w-full resize-y rounded-lg border border-gray-300 p-3 text-sm leading-6 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+      />
+    </div>
+  );
+}
+
+// ============================================
+// FILE UPLOAD
+// ============================================
+
+function FileUpload({
+  title,
+  description,
+  file,
+  onChange,
+  required = false,
+}: {
+  title: string;
+  description: string;
+  file: File | null;
+  onChange: (file: File | null) => void;
+  required?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+
+      <h3 className="font-semibold text-gray-900">
+        {title}
+        {required && (
+          <span className="ml-1 text-red-500">
+            *
+          </span>
+        )}
+      </h3>
+
+      <p className="mt-1 text-sm text-gray-500">
+        {description}
+      </p>
+
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        required={required}
+        onChange={(e) =>
+          onChange(
+            e.target.files?.[0] ||
+              null
+          )
+        }
+        className="mt-4 block w-full cursor-pointer rounded-lg border border-gray-300 bg-white text-sm text-gray-700 file:mr-4 file:border-0 file:border-r file:border-gray-300 file:bg-blue-600 file:px-4 file:py-2.5 file:font-semibold file:text-white hover:file:bg-blue-700"
+      />
+
+      {file && (
+        <div className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+          ✓ Selected: {file.name}
+        </div>
+      )}
+
+      <p className="mt-2 text-xs text-gray-500">
+        PDF, JPG, PNG or WEBP · Maximum 5 MB
+      </p>
+
+    </div>
   );
 }
