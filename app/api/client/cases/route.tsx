@@ -1,39 +1,49 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-function generateCaseNumber() {
-  const year = new Date().getFullYear();
-
-  const random = Math.floor(
-    100000 + Math.random() * 900000
-  );
-
-  return `LAB-${year}-${random}`;
-}
-
-function optionalString(value: unknown) {
+function optionalString(value: unknown): string | null {
   const result = String(value ?? "").trim();
   return result || null;
 }
 
-function optionalNumber(value: unknown) {
-  if (
-    value === undefined ||
-    value === null ||
-    value === ""
-  ) {
+function optionalDate(value: unknown): Date | null {
+  const result = String(value ?? "").trim();
+
+  if (!result) {
     return null;
   }
 
-  const number = Number(value);
+  const date = new Date(result);
 
-  return Number.isFinite(number)
-    ? number
-    : null;
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export async function POST(request: NextRequest) {
+function optionalDecimal(value: unknown): number | null {
+  const result = String(value ?? "").trim();
+
+  if (!result) {
+    return null;
+  }
+
+  const number = Number(result);
+
+  return Number.isFinite(number) ? number : null;
+}
+
+function optionalInt(value: unknown): number | null {
+  const result = String(value ?? "").trim();
+
+  if (!result) {
+    return null;
+  }
+
+  const number = Number(result);
+
+  return Number.isInteger(number) ? number : null;
+}
+
+export async function POST(request: Request) {
   try {
     const user = await requireUser("CLIENT");
 
@@ -47,28 +57,155 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // ============================================
-    // REQUIRED FIELDS
+    // APPLICANT
+    // ============================================
+
+    const applicantFullName = String(
+      body.applicantFullName ?? ""
+    ).trim();
+
+    const applicantNationalId =
+      optionalString(body.applicantNationalId);
+
+    const applicantPhone =
+      optionalString(body.applicantPhone);
+
+    const applicantEmail =
+      optionalString(body.applicantEmail);
+
+    const applicantAddress =
+      optionalString(body.applicantAddress);
+
+    const applicantDistrict =
+      optionalString(body.applicantDistrict);
+
+    const applicantTraditionalAuthority =
+      optionalString(body.applicantTraditionalAuthority);
+
+    const applicantVillage =
+      optionalString(body.applicantVillage);
+
+    const applicantOccupation =
+      optionalString(body.applicantOccupation);
+
+    // ============================================
+    // RESPONDENT
+    // ============================================
+
+    const respondentName = String(
+      body.respondentName ?? ""
+    ).trim();
+
+    const respondentPhone =
+      optionalString(body.respondentPhone);
+
+    const respondentAddress =
+      optionalString(body.respondentAddress);
+
+    const respondentRelationship =
+      optionalString(body.respondentRelationship);
+
+    // ============================================
+    // COMPLAINT
     // ============================================
 
     const caseType = String(
       body.caseType ?? ""
     ).trim();
 
+    const complaintDate =
+      optionalDate(body.complaintDate);
+
+    const incidentLocation =
+      optionalString(body.incidentLocation);
+
     const description = String(
       body.description ?? ""
     ).trim();
 
-    const applicantFullName = String(
-      body.applicantFullName ?? ""
+    // ============================================
+    // LEGAL AID
+    // ============================================
+
+    const legalAidReason =
+      optionalString(body.legalAidReason);
+
+    const previousLegalAssistance =
+      Boolean(body.previousLegalAssistance);
+
+    const previousLegalAssistanceDetails =
+      optionalString(
+        body.previousLegalAssistanceDetails
+      );
+
+    // ============================================
+    // FINANCIAL
+    // ============================================
+
+    const employmentStatus =
+      optionalString(body.employmentStatus);
+
+    const occupation =
+      optionalString(body.occupation);
+
+    const monthlyIncome =
+      optionalDecimal(body.monthlyIncome);
+
+    const otherIncome =
+      optionalDecimal(body.otherIncome);
+
+    const numberOfDependants =
+      optionalInt(body.numberOfDependants);
+
+    const financialCircumstances =
+      optionalString(body.financialCircumstances);
+
+    // ============================================
+    // DOCUMENTS
+    // ============================================
+
+    const nationalIdUrl = String(
+      body.nationalIdUrl ?? ""
     ).trim();
 
-    const respondentName = String(
-      body.respondentName ?? ""
+    const nationalIdFileName =
+      optionalString(body.nationalIdFileName);
+
+    const recommendationUrl = String(
+      body.recommendationUrl ?? ""
     ).trim();
+
+    const recommendationFileName =
+      optionalString(body.recommendationFileName);
+
+    // ============================================
+    // VALIDATION
+    // ============================================
+
+    if (!applicantFullName) {
+      return NextResponse.json(
+        {
+          error:
+            "Applicant full name is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!respondentName) {
+      return NextResponse.json(
+        {
+          error: "Respondent name is required.",
+        },
+        { status: 400 }
+      );
+    }
 
     if (!caseType) {
       return NextResponse.json(
-        { error: "Case type is required." },
+        {
+          error: "Case type is required.",
+        },
         { status: 400 }
       );
     }
@@ -83,21 +220,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!applicantFullName) {
+    if (!nationalIdUrl) {
       return NextResponse.json(
         {
-          error:
-            "Applicant name is required.",
+          error: "National ID is required.",
         },
         { status: 400 }
       );
     }
 
-    if (!respondentName) {
+    if (!recommendationUrl) {
       return NextResponse.json(
         {
           error:
-            "Respondent name is required.",
+            "Recommendation letter is required.",
         },
         { status: 400 }
       );
@@ -107,16 +243,9 @@ export async function POST(request: NextRequest) {
     // CASE NUMBER
     // ============================================
 
-    let caseNumber = generateCaseNumber();
-
-    while (
-      await db.case.findUnique({
-        where: { caseNumber },
-        select: { id: true },
-      })
-    ) {
-      caseNumber = generateCaseNumber();
-    }
+    const caseNumber = `LAB-${new Date().getFullYear()}-${Date.now()
+      .toString()
+      .slice(-6)}`;
 
     // ============================================
     // CREATE CASE
@@ -125,140 +254,53 @@ export async function POST(request: NextRequest) {
     const newCase = await db.case.create({
       data: {
         caseNumber,
-
         userId: user.id,
 
         // Applicant
         applicantFullName,
-        applicantNationalId:
-          optionalString(
-            body.applicantNationalId
-          ),
-        applicantPhone:
-          optionalString(
-            body.applicantPhone
-          ),
-        applicantEmail:
-          optionalString(
-            body.applicantEmail
-          ),
-        applicantAddress:
-          optionalString(
-            body.applicantAddress
-          ),
-        applicantDistrict:
-          optionalString(
-            body.applicantDistrict
-          ),
-        applicantTraditionalAuthority:
-          optionalString(
-            body.applicantTraditionalAuthority
-          ),
-        applicantVillage:
-          optionalString(
-            body.applicantVillage
-          ),
-        applicantOccupation:
-          optionalString(
-            body.applicantOccupation
-          ),
+        applicantNationalId,
+        applicantPhone,
+        applicantEmail,
+        applicantAddress,
+        applicantDistrict,
+        applicantTraditionalAuthority,
+        applicantVillage,
+        applicantOccupation,
 
         // Respondent
         respondentName,
-        respondentPhone:
-          optionalString(
-            body.respondentPhone
-          ),
-        respondentAddress:
-          optionalString(
-            body.respondentAddress
-          ),
-        respondentRelationship:
-          optionalString(
-            body.respondentRelationship
-          ),
+        respondentPhone,
+        respondentAddress,
+        respondentRelationship,
 
         // Complaint
         caseType,
+        complaintDate,
+        incidentLocation,
         description,
-        incidentLocation:
-          optionalString(
-            body.incidentLocation
-          ),
-
-        complaintDate: body.complaintDate
-          ? new Date(body.complaintDate)
-          : null,
 
         // Legal aid
-        legalAidReason:
-          optionalString(
-            body.legalAidReason
-          ),
-
-        previousLegalAssistance:
-          Boolean(
-            body.previousLegalAssistance
-          ),
-
-        previousLegalAssistanceDetails:
-          optionalString(
-            body.previousLegalAssistanceDetails
-          ),
+        legalAidReason,
+        previousLegalAssistance,
+        previousLegalAssistanceDetails,
 
         // Financial
-        employmentStatus:
-          optionalString(
-            body.employmentStatus
-          ),
-
-        occupation:
-          optionalString(
-            body.occupation
-          ),
-
-        monthlyIncome:
-          optionalNumber(
-            body.monthlyIncome
-          ),
-
-        otherIncome:
-          optionalNumber(
-            body.otherIncome
-          ),
-
-        numberOfDependants:
-          body.numberOfDependants !== ""
-            ? Number(
-                body.numberOfDependants
-              )
-            : null,
-
-        financialCircumstances:
-          optionalString(
-            body.financialCircumstances
-          ),
+        employmentStatus,
+        occupation,
+        monthlyIncome,
+        otherIncome,
+        numberOfDependants,
+        financialCircumstances,
 
         // Documents
-        nationalIdUrl:
-          optionalString(
-            body.nationalIdUrl
-          ),
+        nationalIdUrl,
+        nationalIdFileName,
+        recommendationUrl,
+        recommendationFileName,
 
-        nationalIdFileName:
-          optionalString(
-            body.nationalIdFileName
-          ),
-
-        recommendationUrl:
-          optionalString(
-            body.recommendationUrl
-          ),
-
-        recommendationFileName:
-          optionalString(
-            body.recommendationFileName
-          ),
+        // Status
+        status: "PENDING",
+        consultationStatus: "NOT_SCHEDULED",
       },
     });
 
@@ -278,7 +320,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Failed to create case. Please try again.",
+          error instanceof Error
+            ? error.message
+            : "Failed to create case.",
       },
       { status: 500 }
     );
