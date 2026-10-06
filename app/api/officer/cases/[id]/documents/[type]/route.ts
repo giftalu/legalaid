@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { get } from "@vercel/blob";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { get } from "@vercel/blob";
 
 export async function GET(
   request: Request,
@@ -46,6 +46,15 @@ export async function GET(
       where: {
         id: caseId,
       },
+      select: {
+        id: true,
+
+        nationalIdUrl: true,
+        nationalIdFileName: true,
+
+        recommendationUrl: true,
+        recommendationFileName: true,
+      },
     });
 
     if (!caseData) {
@@ -70,12 +79,15 @@ export async function GET(
       });
     }
 
-    console.log("DOCUMENT URL:", url);
+    console.log("OFFICER DOCUMENT URL:", url);
 
     const blobUrl = new URL(url);
-    const pathname = blobUrl.pathname.replace(/^\/+/, "");
 
-    console.log("BLOB PATHNAME:", pathname);
+    const pathname = decodeURIComponent(
+      blobUrl.pathname.replace(/^\/+/, "")
+    );
+
+    console.log("OFFICER BLOB PATHNAME:", pathname);
 
     const result = await get(pathname, {
       access: "private",
@@ -94,9 +106,10 @@ export async function GET(
           result.blob.contentType ||
           "application/octet-stream",
 
-        "Content-Disposition": `inline; filename="${(
-          fileName || "document"
-        ).replace(/"/g, "")}"`,
+        "Content-Disposition":
+          `inline; filename="${(
+            fileName || "document"
+          ).replace(/"/g, "")}"`,
 
         "Cache-Control":
           "private, no-store, max-age=0",
@@ -108,7 +121,13 @@ export async function GET(
   } catch (error) {
     console.error(
       "OFFICER DOCUMENT ERROR:",
-      error
+      error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+          }
+        : error
     );
 
     return new NextResponse(
