@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deleteClientCase } from "../actions";
 import { logout } from "@/app/login/actions";
+
 export default async function ClientDashboard() {
   const user = await requireUser("CLIENT");
 
@@ -359,25 +360,23 @@ export default async function ClientDashboard() {
                       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
 
                         {c.nationalIdUrl && (
-                          <a
-                            href={c.nationalIdUrl}
+                          <Link
+                            href={`/api/client/cases/${c.id}/documents/national-id`}
                             target="_blank"
-                            rel="noopener noreferrer"
                             className="rounded-lg bg-gray-900 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-gray-800"
                           >
-                            View National ID
-                          </a>
+                            Preview National ID
+                          </Link>
                         )}
 
                         {c.recommendationUrl && (
-                          <a
-                            href={c.recommendationUrl}
+                          <Link
+                            href={`/api/client/cases/${c.id}/documents/recommendation`}
                             target="_blank"
-                            rel="noopener noreferrer"
                             className="rounded-lg bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-700"
                           >
-                            View Recommendation
-                          </a>
+                            Preview Recommendation
+                          </Link>
                         )}
 
                       </div>
