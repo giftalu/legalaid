@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { get } from "@vercel/blob";
 
 export async function GET(
-  request: NextRequest,
+  request: Request,
   {
     params,
   }: {
@@ -24,6 +25,14 @@ export async function GET(
 
     const { id, type } = await params;
 
+    const caseId = Number(id);
+
+    if (!Number.isInteger(caseId) || caseId <= 0) {
+      return new NextResponse("Invalid case ID", {
+        status: 400,
+      });
+    }
+
     if (
       type !== "national-id" &&
       type !== "recommendation"
@@ -35,7 +44,7 @@ export async function GET(
 
     const caseData = await db.case.findUnique({
       where: {
-       id: Number(id),
+        id: caseId,
       },
     });
 
@@ -61,32 +70,33 @@ export async function GET(
       });
     }
 
-    const blobResponse = await fetch(url);
+    console.log("DOCUMENT URL:", url);
 
-    if (!blobResponse.ok) {
-      return new NextResponse(
-        "Unable to retrieve document",
-        {
-          status: 502,
-        }
-      );
+    const blobUrl = new URL(url);
+    const pathname = blobUrl.pathname.replace(/^\/+/, "");
+
+    console.log("BLOB PATHNAME:", pathname);
+
+    const result = await get(pathname, {
+      access: "private",
+    });
+
+    if (!result) {
+      return new NextResponse("Document not found", {
+        status: 404,
+      });
     }
 
-    const contentType =
-      blobResponse.headers.get("content-type") ||
-      "application/octet-stream";
-
-    const buffer = await blobResponse.arrayBuffer();
-
-    return new NextResponse(buffer, {
+    return new NextResponse(result.stream, {
       status: 200,
-
       headers: {
-        "Content-Type": contentType,
+        "Content-Type":
+          result.blob.contentType ||
+          "application/octet-stream",
 
-        "Content-Disposition": `inline; filename="${
+        "Content-Disposition": `inline; filename="${(
           fileName || "document"
-        }"`,
+        ).replace(/"/g, "")}"`,
 
         "Cache-Control":
           "private, no-store, max-age=0",
@@ -102,9 +112,9 @@ export async function GET(
     );
 
     return new NextResponse(
-      "Unable to preview document",
+      "Unable to retrieve stored document",
       {
-        status: 500,
+        status: 502,
       }
     );
   }
