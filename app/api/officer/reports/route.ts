@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const district = searchParams.get("district");
     const format = searchParams.get("format");
 
-    const where: any = {};
+    const where: Record<string, unknown> = {};
 
     if (status && status !== "ALL") {
       where.status = status;
@@ -37,27 +37,29 @@ export async function GET(request: NextRequest) {
     }
 
     if (from || to) {
-      where.createdAt = {};
+      const createdAt: Record<string, Date> = {};
 
       if (from) {
-        where.createdAt.gte = new Date(`${from}T00:00:00`);
+        createdAt.gte = new Date(`${from}T00:00:00`);
       }
 
       if (to) {
-        where.createdAt.lte = new Date(`${to}T23:59:59.999`);
+        createdAt.lte = new Date(`${to}T23:59:59.999`);
       }
+
+      where.createdAt = createdAt;
     }
+
+    // --------------------------------------------------
+    // GET CASES
+    // --------------------------------------------------
 
     const cases = await db.case.findMany({
       where,
-
       orderBy: {
         createdAt: "desc",
       },
-
       include: {
-        payments: true,
-
         user: {
           select: {
             id: true,
@@ -65,7 +67,6 @@ export async function GET(request: NextRequest) {
             email: true,
           },
         },
-
         reviewedBy: {
           select: {
             id: true,
@@ -76,130 +77,191 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const totalCases = cases.length;
+    // --------------------------------------------------
+    // GET PAYMENTS SEPARATELY
+    // --------------------------------------------------
 
-    const pendingCases = cases.filter(
-      (c) => c.status === "PENDING"
-    ).length;
+    const caseIds = cases.map((item) => item.id);
 
-    const approvedCases = cases.filter(
-      (c) => c.status === "APPROVED"
-    ).length;
+    const payments =
+      caseIds.length > 0
+        ? await db.payment.findMany({
+            where: {
+              caseId: {
+                in: caseIds,
+              },
+            },
+            select: {
+              id: true,
+              caseId: true,
+              amount: true,
+              status: true,
+            },
+          })
+        : [];
 
-    const rejectedCases = cases.filter(
-      (c) => c.status === "REJECTED"
-    ).length;
+    // --------------------------------------------------
+    // GROUP PAYMENTS BY CASE
+    // --------------------------------------------------
 
-    const inReviewCases = cases.filter(
-      (c) => c.status === "IN_REVIEW"
-    ).length;
+    const paymentsByCase = new Map<
+      number,
+      typeof payments
+    >();
 
-    const assignedCases = cases.filter(
-      (c) => c.status === "ASSIGNED"
-    ).length;
+    for (const payment of payments) {
+      const existing =
+        paymentsByCase.get(payment.caseId) || [];
 
-    const inProgressCases = cases.filter(
-      (c) => c.status === "IN_PROGRESS"
-    ).length;
+      existing.push(payment);
 
-    const resolvedCases = cases.filter(
-      (c) => c.status === "RESOLVED"
-    ).length;
-
-    const closedCases = cases.filter(
-      (c) => c.status === "CLOSED"
-    ).length;
-
-    let totalPayments = 0;
-    let paidPayments = 0;
-    let pendingPayments = 0;
-    let failedPayments = 0;
-
-    const caseRows = cases.map((c) => {
-      const paid = c.payments
-        .filter((p) => p.status === "PAID")
-        .reduce(
-          (sum, p) => sum + Number(p.amount),
-          0
-        );
-
-      const pending = c.payments
-        .filter(
-          (p) =>
-            p.status === "PENDING" ||
-            p.status === "PROCESSING"
-        )
-        .reduce(
-          (sum, p) => sum + Number(p.amount),
-          0
-        );
-
-      const failed = c.payments
-        .filter(
-          (p) =>
-            p.status === "FAILED" ||
-            p.status === "CANCELLED"
-        )
-        .reduce(
-          (sum, p) => sum + Number(p.amount),
-          0
-        );
-
-      const total = c.payments.reduce(
-        (sum, p) => sum + Number(p.amount),
-        0
+      paymentsByCase.set(
+        payment.caseId,
+        existing
       );
+    }
 
-      totalPayments += total;
-      paidPayments += paid;
-      pendingPayments += pending;
-      failedPayments += failed;
+    // --------------------------------------------------
+    // SUMMARY
+    // --------------------------------------------------
+
+    const summary = {
+      total: cases.length,
+
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      inReview: 0,
+      assigned: 0,
+      inProgress: 0,
+      resolved: 0,
+      closed: 0,
+
+      totalPayments: 0,
+      paidPayments: 0,
+      outstandingPayments: 0,
+    };
+
+    const byCaseType: Record<string, number> = {};
+    const byDistrict: Record<string, number> = {};
+
+    // --------------------------------------------------
+    // BUILD REPORT ROWS
+    // --------------------------------------------------
+
+    const rows = cases.map((item) => {
+      // Status counts
+
+      if (item.status === "PENDING") {
+        summary.pending++;
+      }
+
+      if (item.status === "APPROVED") {
+        summary.approved++;
+      }
+
+      if (item.status === "REJECTED") {
+        summary.rejected++;
+      }
+
+      if (item.status === "IN_REVIEW") {
+        summary.inReview++;
+      }
+
+      if (item.status === "ASSIGNED") {
+        summary.assigned++;
+      }
+
+      if (item.status === "IN_PROGRESS") {
+        summary.inProgress++;
+      }
+
+      if (item.status === "RESOLVED") {
+        summary.resolved++;
+      }
+
+      if (item.status === "CLOSED") {
+        summary.closed++;
+      }
+
+      // Case type
+
+      byCaseType[item.caseType] =
+        (byCaseType[item.caseType] || 0) + 1;
+
+      // District
+
+      const districtName =
+        item.applicantDistrict || "Not specified";
+
+      byDistrict[districtName] =
+        (byDistrict[districtName] || 0) + 1;
+
+      // Payments belonging to this case
+
+      const casePayments =
+        paymentsByCase.get(item.id) || [];
+
+      let totalPayment = 0;
+      let paidPayment = 0;
+      let outstandingPayment = 0;
+
+      for (const payment of casePayments) {
+        const amount = Number(payment.amount);
+
+        totalPayment += amount;
+
+        if (payment.status === "PAID") {
+          paidPayment += amount;
+        }
+
+        if (
+          payment.status === "PENDING" ||
+          payment.status === "PROCESSING"
+        ) {
+          outstandingPayment += amount;
+        }
+      }
+
+      summary.totalPayments += totalPayment;
+      summary.paidPayments += paidPayment;
+      summary.outstandingPayments +=
+        outstandingPayment;
 
       return {
-        id: c.id,
-        caseNumber: c.caseNumber,
+        id: item.id,
 
-        applicant: c.applicantFullName,
-        respondent: c.respondentName,
+        caseNumber: item.caseNumber,
 
-        caseType: c.caseType,
-        district: c.applicantDistrict || "",
+        applicant: item.applicantFullName,
 
-        status: c.status,
+        respondent: item.respondentName,
 
-        createdAt: c.createdAt,
+        caseType: item.caseType,
+
+        district: districtName,
+
+        status: item.status,
+
+        createdAt: item.createdAt,
 
         officer:
-          c.reviewedBy?.name || "",
+          item.reviewedBy?.name ||
+          "Not assigned",
 
-        totalPayment: total,
-        paidPayment: paid,
-        outstandingPayment: pending,
+        totalPayment,
 
-        userEmail: c.user.email,
+        paidPayment,
+
+        outstandingPayment,
+
+        email: item.user.email,
       };
     });
 
-    const byCaseType: Record<
-      string,
-      number
-    > = {};
-
-    const byDistrict: Record<
-      string,
-      number
-    > = {};
-
-    for (const c of cases) {
-      byCaseType[c.caseType] =
-        (byCaseType[c.caseType] || 0) + 1;
-
-      const d =
-        c.applicantDistrict || "Not specified";
-
-      byDistrict[d] =
-        (byDistrict[d] || 0) + 1;
-    }
+    // --------------------------------------------------
+    // CSV EXPORT
+    // --------------------------------------------------
 
     if (format === "csv") {
       const headers = [
@@ -217,7 +279,7 @@ export async function GET(request: NextRequest) {
         "Client Email",
       ];
 
-      const csvRows = caseRows.map((row) =>
+      const csvRows = rows.map((row) =>
         [
           row.caseNumber,
           row.applicant,
@@ -230,10 +292,14 @@ export async function GET(request: NextRequest) {
           row.totalPayment.toFixed(2),
           row.paidPayment.toFixed(2),
           row.outstandingPayment.toFixed(2),
-          row.userEmail,
+          row.email,
         ]
-          .map((value) =>
-            `"${String(value).replace(/"/g, '""')}"`
+          .map(
+            (value) =>
+              `"${String(value).replace(
+                /"/g,
+                '""'
+              )}"`
           )
           .join(",")
       );
@@ -245,6 +311,7 @@ export async function GET(request: NextRequest) {
 
       return new NextResponse(csv, {
         status: 200,
+
         headers: {
           "Content-Type":
             "text/csv; charset=utf-8",
@@ -257,6 +324,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // --------------------------------------------------
+    // JSON REPORT
+    // --------------------------------------------------
+
     return NextResponse.json({
       filters: {
         from,
@@ -266,37 +337,24 @@ export async function GET(request: NextRequest) {
         district,
       },
 
-      summary: {
-        totalCases,
-
-        pendingCases,
-        approvedCases,
-        rejectedCases,
-
-        inReviewCases,
-        assignedCases,
-        inProgressCases,
-
-        resolvedCases,
-        closedCases,
-
-        totalPayments,
-        paidPayments,
-        pendingPayments,
-        failedPayments,
-      },
+      summary,
 
       byCaseType,
+
       byDistrict,
 
-      cases: caseRows,
+      cases: rows,
     });
   } catch (error) {
-    console.error("REPORT GENERATION ERROR:", error);
+    console.error(
+      "REPORT ERROR:",
+      error
+    );
 
     return NextResponse.json(
       {
-        error: "Unable to generate report",
+        error:
+          "Unable to generate report",
       },
       {
         status: 500,

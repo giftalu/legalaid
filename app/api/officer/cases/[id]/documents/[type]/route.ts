@@ -74,21 +74,37 @@ export async function GET(
       });
     }
 
-    console.log("OFFICER DOCUMENT URL:", url);
-
     const blobUrl = new URL(url);
 
-    const pathname = decodeURIComponent(
-      blobUrl.pathname.replace(/^\/+/, "")
-    );
+    const pathname = blobUrl.pathname
+      .replace(/^\/+/, "")
+      .trim();
 
-    console.log("OFFICER BLOB PATHNAME:", pathname);
+    console.log("OFFICER DOCUMENT:", {
+      caseId,
+      type,
+      pathname,
+      hasBlobToken: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
+    });
+
+    if (!pathname) {
+      return new NextResponse("Invalid blob pathname", {
+        status: 500,
+      });
+    }
 
     const result = await get(pathname, {
       access: "private",
     });
 
-    if (!result) {
+    console.log("OFFICER BLOB RESULT:", {
+      statusCode: result?.statusCode,
+      blobUrl: result?.blob?.url,
+      pathname: result?.blob?.pathname,
+      contentType: result?.blob?.contentType,
+    });
+
+    if (!result || result.statusCode !== 200 || !result.stream) {
       return new NextResponse("Document not found", {
         status: 404,
       });
@@ -103,22 +119,13 @@ export async function GET(
         "Content-Disposition":
           `inline; filename="${(fileName || "document").replace(/"/g, "")}"`,
 
-        "Cache-Control": "private, no-store, max-age=0",
+        "Cache-Control": "private, no-store",
 
         "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {
-    console.error(
-      "OFFICER DOCUMENT ERROR:",
-      error instanceof Error
-        ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-          }
-        : error
-    );
+    console.error("OFFICER DOCUMENT ERROR:", error);
 
     return new NextResponse(
       "Unable to retrieve stored document",
