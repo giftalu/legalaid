@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export async function GET(
-  request: Request,
+  _request: Request,
   {
     params,
   }: {
@@ -33,10 +33,7 @@ export async function GET(
       });
     }
 
-    if (
-      type !== "national-id" &&
-      type !== "recommendation"
-    ) {
+    if (type !== "national-id" && type !== "recommendation") {
       return new NextResponse("Invalid document type", {
         status: 400,
       });
@@ -48,10 +45,8 @@ export async function GET(
       },
       select: {
         id: true,
-
         nationalIdUrl: true,
         nationalIdFileName: true,
-
         recommendationUrl: true,
         recommendationFileName: true,
       },
@@ -103,19 +98,14 @@ export async function GET(
       status: 200,
       headers: {
         "Content-Type":
-          result.blob.contentType ||
-          "application/octet-stream",
+          result.blob.contentType || "application/octet-stream",
 
         "Content-Disposition":
-          `inline; filename="${(
-            fileName || "document"
-          ).replace(/"/g, "")}"`,
+          `inline; filename="${(fileName || "document").replace(/"/g, "")}"`,
 
-        "Cache-Control":
-          "private, no-store, max-age=0",
+        "Cache-Control": "private, no-store, max-age=0",
 
-        "X-Content-Type-Options":
-          "nosniff",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {
