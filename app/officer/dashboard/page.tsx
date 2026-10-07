@@ -349,25 +349,25 @@ export default async function OfficerDashboard() {
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
 
                       {c.nationalIdUrl && (
-                        <a
+                        <Link
                           href={c.nationalIdUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="rounded-lg bg-gray-900 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-gray-800"
                         >
                           View National ID
-                        </a>
+                        </Link>
                       )}
 
                       {c.recommendationUrl && (
-                        <a
+                        <Link
                           href={c.recommendationUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="rounded-lg bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-700"
                         >
                           View Recommendation
-                        </a>
+                        </Link>
                       )}
 
                       {!c.nationalIdUrl &&
