@@ -6,8 +6,7 @@ import { db } from "@/lib/db";
 
 import DeleteCaseButton from "@/app/officer/components/DeleteCaseButton";
 import { logout } from "@/app/login/actions";
-import { LogOut, Plus } from "lucide-react";
-
+import { LogOut } from "lucide-react";
 
 import {
   updateCaseStatus,
@@ -15,13 +14,13 @@ import {
   deleteCase,
 } from "@/app/officer/actions";
 
-
 export default async function OfficerDashboard() {
   const officer = await requireUser("OFFICER");
 
   if (!officer) {
     redirect("/login");
   }
+
   const [
     totalCases,
     pendingCases,
@@ -90,7 +89,10 @@ export default async function OfficerDashboard() {
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-6xl">
 
-        {/* Header */}
+        {/* ===================================================== */}
+        {/* HEADER */}
+        {/* ===================================================== */}
+
         <header className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
 
@@ -132,15 +134,14 @@ export default async function OfficerDashboard() {
                 </button>
               </form>
             </div>
-
           </div>
         </header>
+
         {/* ===================================================== */}
         {/* CASE COUNTERS */}
         {/* ===================================================== */}
 
         <section className="mb-8">
-
           <div className="mb-4">
             <h2 className="text-lg font-bold text-gray-900">
               Case Overview
@@ -208,11 +209,13 @@ export default async function OfficerDashboard() {
               className="border-gray-200 bg-gray-100"
               textClass="text-gray-700"
             />
-
           </div>
-
         </section>
-        {/* Cases */}
+
+        {/* ===================================================== */}
+        {/* CASES */}
+        {/* ===================================================== */}
+
         {cases.length === 0 ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
             <p className="font-medium text-gray-700">
@@ -262,7 +265,6 @@ export default async function OfficerDashboard() {
                     </div>
 
                     <StatusBadge status={c.status} />
-
                   </div>
                 </div>
 
@@ -273,7 +275,6 @@ export default async function OfficerDashboard() {
                   {/* ================================================= */}
 
                   <div className="rounded-xl border border-gray-200 p-4">
-
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                       Client
                     </p>
@@ -285,7 +286,6 @@ export default async function OfficerDashboard() {
                     <p className="text-sm text-gray-500">
                       {c.user.email}
                     </p>
-
                   </div>
 
                   {/* ================================================= */}
@@ -295,7 +295,6 @@ export default async function OfficerDashboard() {
                   <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
 
                     <div className="rounded-xl border border-gray-200 p-4">
-
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                         Case Type
                       </p>
@@ -303,11 +302,9 @@ export default async function OfficerDashboard() {
                       <p className="mt-1 font-semibold text-gray-900">
                         {c.caseType}
                       </p>
-
                     </div>
 
                     <div className="rounded-xl border border-gray-200 p-4">
-
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                         Current Status
                       </p>
@@ -315,9 +312,7 @@ export default async function OfficerDashboard() {
                       <div className="mt-2">
                         <StatusBadge status={c.status} />
                       </div>
-
                     </div>
-
                   </div>
 
                   {/* ================================================= */}
@@ -325,7 +320,6 @@ export default async function OfficerDashboard() {
                   {/* ================================================= */}
 
                   <div className="mt-4 rounded-xl bg-gray-50 p-4">
-
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                       Case Description
                     </p>
@@ -333,7 +327,6 @@ export default async function OfficerDashboard() {
                     <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-700">
                       {c.description}
                     </p>
-
                   </div>
 
                   {/* ================================================= */}
@@ -348,37 +341,38 @@ export default async function OfficerDashboard() {
 
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
 
+                      {/* NATIONAL ID */}
                       {c.nationalIdUrl && (
                         <Link
-                          href={c.nationalIdUrl}
+                          href={`/officer/cases/${c.id}/documents/national-id`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="rounded-lg bg-gray-900 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-gray-800"
+                          className="rounded-lg bg-gray-900 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-gray-800"
                         >
                           View National ID
                         </Link>
                       )}
 
+                      {/* RECOMMENDATION */}
                       {c.recommendationUrl && (
                         <Link
-                          href={c.recommendationUrl}
+                          href={`/officer/cases/${c.id}/documents/recommendation`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="rounded-lg bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-blue-700"
+                          className="rounded-lg bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
                         >
                           View Recommendation
                         </Link>
                       )}
 
+                      {/* NO DOCUMENTS */}
                       {!c.nationalIdUrl &&
                         !c.recommendationUrl && (
                           <p className="text-sm text-gray-500">
                             No documents uploaded.
                           </p>
                         )}
-
                     </div>
-
                   </div>
 
                   {/* ================================================= */}
@@ -400,7 +394,6 @@ export default async function OfficerDashboard() {
                         No comment has been added yet.
                       </p>
                     )}
-
                   </div>
 
                   {/* ================================================= */}
@@ -445,14 +438,12 @@ export default async function OfficerDashboard() {
                             " "
                           )}
                         </p>
-
                       </div>
                     ) : (
                       <p className="mt-2 text-sm text-green-700">
                         No consultation scheduled.
                       </p>
                     )}
-
                   </div>
 
                   {/* ================================================= */}
@@ -490,9 +481,7 @@ export default async function OfficerDashboard() {
                           name="comment"
                           rows={3}
                           placeholder="Enter an officer comment..."
-                          defaultValue={
-                            c.officerComment ?? ""
-                          }
+                          defaultValue={c.officerComment ?? ""}
                           className="w-full rounded-lg border border-gray-300 p-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                         />
 
@@ -517,9 +506,7 @@ export default async function OfficerDashboard() {
                           </button>
 
                         </div>
-
                       </form>
-
                     </div>
 
                     {/* ============================================= */}
@@ -581,7 +568,6 @@ export default async function OfficerDashboard() {
                         </button>
 
                       </form>
-
                     </div>
 
                     {/* ============================================= */}
@@ -596,7 +582,7 @@ export default async function OfficerDashboard() {
 
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
 
-                        {/* View */}
+                        {/* VIEW */}
                         <Link
                           href={`/officer/cases/${c.id}`}
                           className="rounded-lg bg-gray-900 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-gray-800"
@@ -604,7 +590,7 @@ export default async function OfficerDashboard() {
                           View Case
                         </Link>
 
-                        {/* Edit */}
+                        {/* EDIT */}
                         <Link
                           href={`/officer/cases/${c.id}/edit`}
                           className="rounded-lg bg-amber-500 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-amber-600"
@@ -612,7 +598,7 @@ export default async function OfficerDashboard() {
                           Edit Case
                         </Link>
 
-                        {/* Delete */}
+                        {/* DELETE */}
                         <DeleteCaseButton
                           caseId={c.id}
                           caseNumber={c.caseNumber}
@@ -620,19 +606,13 @@ export default async function OfficerDashboard() {
                         />
 
                       </div>
-
                     </div>
-
                   </div>
-
                 </div>
-
               </article>
             ))}
-
           </div>
         )}
-
       </div>
     </main>
   );
@@ -648,41 +628,31 @@ function StatusBadge({
   status: string;
 }) {
   const styles: Record<string, string> = {
-    PENDING:
-      "bg-yellow-100 text-yellow-700",
-
-    APPROVED:
-      "bg-green-100 text-green-700",
-
-    REJECTED:
-      "bg-red-100 text-red-700",
-
-    IN_REVIEW:
-      "bg-blue-100 text-blue-700",
-
-    ASSIGNED:
-      "bg-indigo-100 text-indigo-700",
-
-    IN_PROGRESS:
-      "bg-blue-100 text-blue-700",
-
-    RESOLVED:
-      "bg-purple-100 text-purple-700",
-
-    CLOSED:
-      "bg-gray-200 text-gray-700",
+    PENDING: "bg-yellow-100 text-yellow-700",
+    APPROVED: "bg-green-100 text-green-700",
+    REJECTED: "bg-red-100 text-red-700",
+    IN_REVIEW: "bg-blue-100 text-blue-700",
+    ASSIGNED: "bg-indigo-100 text-indigo-700",
+    IN_PROGRESS: "bg-blue-100 text-blue-700",
+    RESOLVED: "bg-purple-100 text-purple-700",
+    CLOSED: "bg-gray-200 text-gray-700",
   };
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${styles[status] ??
-        "bg-gray-100 text-gray-700"
-        }`}
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+        styles[status] ?? "bg-gray-100 text-gray-700"
+      }`}
     >
       {status.replaceAll("_", " ")}
     </span>
   );
 }
+
+/* ========================================================= */
+/* COUNTER CARD */
+/* ========================================================= */
+
 function CounterCard({
   title,
   count,
