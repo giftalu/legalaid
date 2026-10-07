@@ -86,18 +86,18 @@ export async function GET(request: NextRequest) {
     const payments =
       caseIds.length > 0
         ? await db.payment.findMany({
-            where: {
-              caseId: {
-                in: caseIds,
-              },
+          where: {
+            caseId: {
+              in: caseIds,
             },
-            select: {
-              id: true,
-              caseId: true,
-              amount: true,
-              status: true,
-            },
-          })
+          },
+          select: {
+            id: true,
+            caseId: true,
+            amount: true,
+            status: true,
+          },
+        })
         : [];
 
     // --------------------------------------------------
@@ -140,8 +140,8 @@ export async function GET(request: NextRequest) {
       totalPayments: 0,
       paidPayments: 0,
       outstandingPayments: 0,
+      failedPayments: 0,
     };
-
     const byCaseType: Record<string, number> = {};
     const byDistrict: Record<string, number> = {};
 
@@ -220,6 +220,10 @@ export async function GET(request: NextRequest) {
           payment.status === "PROCESSING"
         ) {
           outstandingPayment += amount;
+        }
+
+        if (payment.status === "FAILED") {
+          summary.failedPayments += amount;
         }
       }
 

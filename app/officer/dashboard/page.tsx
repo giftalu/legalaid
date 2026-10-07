@@ -123,7 +123,15 @@ export default async function OfficerDashboard() {
             </div>
 
             {/* Actions */}
+            
             <div className="flex flex-col gap-2 sm:flex-row">
+              <Link
+                href="/officer/reports"
+                className="inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
+              >
+                Reports
+              </Link>
+
               <form action={logout}>
                 <button
                   type="submit"
@@ -134,6 +142,8 @@ export default async function OfficerDashboard() {
                 </button>
               </form>
             </div>
+          
+
           </div>
         </header>
 
@@ -640,9 +650,8 @@ function StatusBadge({
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-        styles[status] ?? "bg-gray-100 text-gray-700"
-      }`}
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${styles[status] ?? "bg-gray-100 text-gray-700"
+        }`}
     >
       {status.replaceAll("_", " ")}
     </span>

@@ -390,9 +390,7 @@ export default function OfficerReportsPage() {
 
                 <MoneyCard
                   title="Outstanding"
-                  value={
-                    report.summary?.pendingPayments ?? 0
-                  }
+                  value={report.summary?.outstandingPayments ?? 0}
                 />
 
                 <MoneyCard
@@ -415,7 +413,7 @@ export default function OfficerReportsPage() {
               </h2>
 
               {report.byCaseType &&
-              Object.keys(report.byCaseType).length > 0 ? (
+                Object.keys(report.byCaseType).length > 0 ? (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
                   {Object.entries(
@@ -457,7 +455,7 @@ export default function OfficerReportsPage() {
               </h2>
 
               {report.byDistrict &&
-              Object.keys(report.byDistrict).length > 0 ? (
+                Object.keys(report.byDistrict).length > 0 ? (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
                   {Object.entries(
@@ -553,7 +551,7 @@ export default function OfficerReportsPage() {
                   <tbody>
 
                     {report.cases &&
-                    report.cases.length > 0 ? (
+                      report.cases.length > 0 ? (
                       report.cases.map(
                         (item: any) => (
 
