@@ -324,42 +324,42 @@ export default function OfficerReportsPage() {
 
               <SummaryCard
                 title="Total Cases"
-                value={report.summary?.totalCases ?? 0}
+                value={report.summary?.total ?? 0}
               />
 
               <SummaryCard
                 title="Pending"
-                value={report.summary?.pendingCases ?? 0}
+                value={report.summary?.outstanding ?? 0}
               />
 
               <SummaryCard
                 title="Approved"
-                value={report.summary?.approvedCases ?? 0}
+                value={report.summary?.approved ?? 0}
               />
 
               <SummaryCard
                 title="Rejected"
-                value={report.summary?.rejectedCases ?? 0}
+                value={report.summary?.rejected ?? 0}
               />
 
               <SummaryCard
                 title="In Review"
-                value={report.summary?.inReviewCases ?? 0}
+                value={report.summary?.inReview ?? 0}
               />
 
               <SummaryCard
                 title="In Progress"
-                value={report.summary?.inProgressCases ?? 0}
+                value={report.summary?.inProgress ?? 0}
               />
 
               <SummaryCard
                 title="Resolved"
-                value={report.summary?.resolvedCases ?? 0}
+                value={report.summary?.resolved ?? 0}
               />
 
               <SummaryCard
                 title="Closed"
-                value={report.summary?.closedCases ?? 0}
+                value={report.summary?.closed ?? 0}
               />
 
             </section>
