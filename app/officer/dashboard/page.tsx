@@ -12,6 +12,7 @@ import {
   updateCaseStatus,
   scheduleConsultation,
   deleteCase,
+  chargeCase,
 } from "@/app/officer/actions";
 
 export default async function OfficerDashboard() {
@@ -123,7 +124,7 @@ export default async function OfficerDashboard() {
             </div>
 
             {/* Actions */}
-            
+
             <div className="flex flex-col gap-2 sm:flex-row">
               <Link
                 href="/officer/reports"
@@ -142,7 +143,7 @@ export default async function OfficerDashboard() {
                 </button>
               </form>
             </div>
-          
+
 
           </div>
         </header>
@@ -578,6 +579,138 @@ export default async function OfficerDashboard() {
                         </button>
 
                       </form>
+                    </div>
+                    {/* ============================================= */}
+                    {/* CASE CHARGING */}
+                    {/* ============================================= */}
+
+                    <div className="mt-6 border-t border-gray-200 pt-5">
+
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Case Charging
+                      </p>
+
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+
+                        <div className="mb-4">
+                          <h4 className="font-semibold text-gray-900">
+                            Assign / Update Case Fee
+                          </h4>
+
+                          <p className="mt-1 text-sm text-gray-600">
+                            Set the amount the client is required to pay for this case.
+                          </p>
+                        </div>
+
+                        {c.assignedFee !== null && c.assignedFee !== undefined && (
+                          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+
+                            <div className="rounded-lg border border-amber-200 bg-white p-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                Assigned Fee
+                              </p>
+
+                              <p className="mt-1 text-lg font-bold text-gray-900">
+                                MWK {Number(c.assignedFee).toLocaleString("en-MW")}
+                              </p>
+                            </div>
+
+                            <div className="rounded-lg border border-amber-200 bg-white p-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                Description
+                              </p>
+
+                              <p className="mt-1 text-sm text-gray-700">
+                                {c.feeDescription || "No description provided"}
+                              </p>
+                            </div>
+
+                            <div className="rounded-lg border border-amber-200 bg-white p-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                Charged On
+                              </p>
+
+                              <p className="mt-1 text-sm text-gray-700">
+                                {c.feeAssignedAt
+                                  ? new Date(c.feeAssignedAt).toLocaleDateString("en-MW", {
+                                    day: "numeric",
+                                    month: "long",
+                                    year: "numeric",
+                                  })
+                                  : "Not recorded"}
+                              </p>
+                            </div>
+
+                          </div>
+                        )}
+
+                        <form
+                          action={chargeCase}
+                          className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
+                        >
+
+                          <input
+                            type="hidden"
+                            name="id"
+                            value={c.id}
+                          />
+
+                          <div>
+                            <label
+                              htmlFor={`amount-${c.id}`}
+                              className="mb-1 block text-xs font-medium text-gray-700"
+                            >
+                              Amount (MWK)
+                            </label>
+
+                            <input
+                              id={`amount-${c.id}`}
+                              type="number"
+                              name="amount"
+                              min="1"
+                              step="0.01"
+                              required
+                              defaultValue={
+                                c.assignedFee !== null && c.assignedFee !== undefined
+                                  ? Number(c.assignedFee)
+                                  : ""
+                              }
+                              placeholder="Enter amount"
+                              className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label
+                              htmlFor={`description-${c.id}`}
+                              className="mb-1 block text-xs font-medium text-gray-700"
+                            >
+                              Charge Description
+                            </label>
+
+                            <input
+                              id={`description-${c.id}`}
+                              type="text"
+                              name="description"
+                              maxLength={500}
+                              defaultValue={c.feeDescription ?? ""}
+                              placeholder="e.g. Legal consultation fee"
+                              className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700"
+                          >
+                            {c.assignedFee !== null && c.assignedFee !== undefined
+                              ? "Update Charge"
+                              : "Charge Case"}
+                          </button>
+
+                        </form>
+
+                      </div>
                     </div>
 
                     {/* ============================================= */}
