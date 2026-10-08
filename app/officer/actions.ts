@@ -231,3 +231,166 @@ export async function deleteCase(formData: FormData) {
 
   redirect("/officer/dashboard");
 }
+/**
+ * Charge a case
+ */
+export async function chargeCase(formData: FormData) {
+  const officer = await requireUser("OFFICER");
+
+  if (!officer) {
+    redirect("/login");
+  }
+
+  const id = Number(formData.get("id"));
+
+  const amountValue = String(
+    formData.get("amount") || ""
+  ).trim();
+
+  const description = String(
+    formData.get("description") || ""
+  ).trim();
+
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("Valid Case ID is required.");
+  }
+
+  const amount = Number(amountValue);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error(
+      "Charge amount must be greater than zero."
+    );
+  }
+
+  if (amount > 1_000_000_000) {
+    throw new Error(
+      "Charge amount is too large."
+    );
+  }
+
+  if (description.length > 500) {
+    throw new Error(
+      "Charge description must be 500 characters or less."
+    );
+  }
+
+  const existingCase = await db.case.findUnique({
+    where: {
+      id,
+    },
+    select: {
+      id: true,
+      caseNumber: true,
+    },
+  });
+
+  if (!existingCase) {
+    throw new Error("Case not found.");
+  }
+
+  await db.case.update({
+    where: {
+      id,
+    },
+    data: {
+      assignedFee: amount,
+      feeDescription: description || null,
+      feeAssignedAt: new Date(),
+    },
+  });
+
+  revalidatePath("/officer/dashboard");
+  revalidatePath(`/officer/cases/${id}`);
+  revalidatePath(`/officer/cases/${id}/edit`);
+  revalidatePath("/officer/reports");
+  revalidatePath("/client/dashboard");
+}
+/**
+ * Review a client payment
+ */
+export async function reviewPayment(
+  formData: FormData
+) {
+  const officer = await requireUser("OFFICER");
+
+  if (!officer) {
+    redirect("/login");
+  }
+
+  const paymentId = Number(
+    formData.get("paymentId")
+  );
+
+  const decision = String(
+    formData.get("decision") || ""
+  );
+
+  if (
+    !Number.isInteger(paymentId) ||
+    paymentId <= 0
+  ) {
+    throw new Error(
+      "Valid payment ID is required."
+    );
+  }
+
+  if (
+    decision !== "PAID" &&
+    decision !== "FAILED"
+  ) {
+    throw new Error(
+      "Invalid payment decision."
+    );
+  }
+
+  const payment = await db.payment.findUnique({
+    where: {
+      id: paymentId,
+    },
+    select: {
+      id: true,
+      caseId: true,
+      status: true,
+    },
+  });
+
+  if (!payment) {
+    throw new Error("Payment not found.");
+  }
+
+  if (
+    payment.status !== "PENDING" &&
+    payment.status !== "PROCESSING"
+  ) {
+    throw new Error(
+      "This payment has already been reviewed."
+    );
+  }
+
+  await db.payment.update({
+    where: {
+      id: paymentId,
+    },
+    data: {
+      status: decision,
+      paymentReviewedAt: new Date(),
+      paymentReviewedById: officer.id,
+      paidAt:
+        decision === "PAID"
+          ? new Date()
+          : null,
+    },
+  });
+
+  revalidatePath("/officer/dashboard");
+  revalidatePath(
+    `/officer/cases/${payment.caseId}`
+  );
+  revalidatePath("/client/dashboard");
+  revalidatePath(
+    `/client/cases/${payment.caseId}`
+  );
+  revalidatePath("/officer/reports");
+}
+

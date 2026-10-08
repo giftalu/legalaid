@@ -7,15 +7,16 @@ datasource db {
 }
 
 model User {
-  id           Int       @id @default(autoincrement())
-  name         String
-  email        String    @unique
-  passwordHash String
-  role         Role      @default(CLIENT)
-  createdAt    DateTime  @default(now())
-  reviewed     Case[]    @relation("ReviewedCases")
-  cases        Case[]
-  payments     Payment[]
+  id             Int       @id @default(autoincrement())
+  name           String
+  email          String    @unique
+  passwordHash   String
+  role           Role      @default(CLIENT)
+  createdAt      DateTime  @default(now())
+  reviewed       Case[]    @relation("ReviewedCases")
+  cases          Case[]
+  payments       Payment[]
+  paymentReviews Payment[] @relation("PaymentReviewedBy")
 }
 
 model Case {
@@ -108,7 +109,9 @@ model Case {
 
   recommendationFileName String?
   recommendationUrl      String?
-
+  assignedFee            Decimal?  @db.Decimal(12, 2)
+  feeDescription         String?
+  feeAssignedAt          DateTime?
   // ============================================
   // INDEXES
   // ============================================
@@ -171,6 +174,14 @@ model Payment {
 
   description String?
 
+  // Manual payment information
+  transactionId       String?
+  proofFileName       String?
+  proofUrl            String?
+  paymentSubmittedAt  DateTime?
+  paymentReviewedAt   DateTime?
+  paymentReviewedById Int?
+
   paidAt DateTime?
 
   createdAt DateTime @default(now())
@@ -179,7 +190,11 @@ model Payment {
   case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  paymentReviewedBy User? @relation("PaymentReviewedBy", fields: [paymentReviewedById], references: [id])
+
   @@index([caseId])
   @@index([userId])
   @@index([status])
+  @@index([transactionId])
+  @@index([paymentReviewedById])
 }

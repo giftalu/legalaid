@@ -329,7 +329,7 @@ export default function OfficerReportsPage() {
 
               <SummaryCard
                 title="Pending"
-                value={report.summary?.outstanding ?? 0}
+                value={report.summary?.pending ?? 0}
               />
 
               <SummaryCard

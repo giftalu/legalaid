@@ -11,16 +11,34 @@ CREATE TYPE "PaymentStatus" AS ENUM (
 -- CreateTable
 CREATE TABLE "Payment" (
     "id" SERIAL NOT NULL,
+
     "caseId" INTEGER NOT NULL,
     "userId" INTEGER NOT NULL,
+
     "amount" DECIMAL(12,2) NOT NULL,
     "currency" TEXT NOT NULL DEFAULT 'MWK',
+
     "status" "PaymentStatus" NOT NULL DEFAULT 'PENDING',
+
     "reference" TEXT NOT NULL,
+
     "provider" TEXT,
     "providerReference" TEXT,
+
+    -- Client payment submission
+    "transactionId" TEXT,
+    "proofFileName" TEXT,
+    "proofUrl" TEXT,
+    "paymentSubmittedAt" TIMESTAMP(3),
+
+    -- Officer payment review
+    "paymentReviewedAt" TIMESTAMP(3),
+    "paymentReviewedById" INTEGER,
+
     "description" TEXT,
+
     "paidAt" TIMESTAMP(3),
+
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -28,16 +46,28 @@ CREATE TABLE "Payment" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Payment_reference_key" ON "Payment"("reference");
+CREATE UNIQUE INDEX "Payment_reference_key"
+ON "Payment"("reference");
 
 -- CreateIndex
-CREATE INDEX "Payment_caseId_idx" ON "Payment"("caseId");
+CREATE INDEX "Payment_caseId_idx"
+ON "Payment"("caseId");
 
 -- CreateIndex
-CREATE INDEX "Payment_userId_idx" ON "Payment"("userId");
+CREATE INDEX "Payment_userId_idx"
+ON "Payment"("userId");
 
 -- CreateIndex
-CREATE INDEX "Payment_status_idx" ON "Payment"("status");
+CREATE INDEX "Payment_status_idx"
+ON "Payment"("status");
+
+-- CreateIndex
+CREATE INDEX "Payment_transactionId_idx"
+ON "Payment"("transactionId");
+
+-- CreateIndex
+CREATE INDEX "Payment_paymentReviewedById_idx"
+ON "Payment"("paymentReviewedById");
 
 -- AddForeignKey
 ALTER TABLE "Payment"
@@ -53,4 +83,12 @@ ADD CONSTRAINT "Payment_userId_fkey"
 FOREIGN KEY ("userId")
 REFERENCES "User"("id")
 ON DELETE CASCADE
+ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Payment"
+ADD CONSTRAINT "Payment_paymentReviewedById_fkey"
+FOREIGN KEY ("paymentReviewedById")
+REFERENCES "User"("id")
+ON DELETE SET NULL
 ON UPDATE CASCADE;
