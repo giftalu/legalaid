@@ -1,3 +1,4 @@
+
 import {
   handleUpload,
   type HandleUploadBody,
@@ -28,7 +29,6 @@ export async function POST(request: Request) {
         pathname,
         clientPayload
       ) => {
-        // Authenticate the uploader.
         const client = await requireUser("CLIENT");
 
         if (!client) {
@@ -39,7 +39,6 @@ export async function POST(request: Request) {
           throw new Error("Missing upload information.");
         }
 
-        // Validate the case ID sent by the browser.
         let payload: { caseId?: unknown };
 
         try {
@@ -50,21 +49,10 @@ export async function POST(request: Request) {
 
         const caseId = Number(payload.caseId);
 
-        if (
-          !Number.isInteger(caseId) ||
-          caseId <= 0
-        ) {
+        if (!Number.isSafeInteger(caseId) || caseId <= 0) {
           throw new Error("Invalid case ID.");
         }
 
-        // Only allow the requested path for this case.
-        const requestedPrefix =
-          `legal-aid/${client.id}/payments/${caseId}/`;
-
-        if (!pathname.startsWith(requestedPrefix)) {
-          throw new Error("Invalid upload path.");
-        }
-        // Confirm the case belongs to the logged-in client.
         const caseItem = await db.case.findFirst({
           where: {
             id: caseId,
@@ -81,10 +69,11 @@ export async function POST(request: Request) {
           );
         }
 
-        // Keep only the filename from the requested path.
-        const requestedName = pathname.split("/").pop() ?? "";
+        const requestedName =
+          pathname.split("/").pop() ?? "";
 
         const safeName = requestedName
+          .normalize("NFKC")
           .replace(/[^a-zA-Z0-9._-]/g, "-")
           .slice(0, 180);
 
@@ -96,13 +85,9 @@ export async function POST(request: Request) {
           throw new Error("Invalid filename.");
         }
 
-        // Force the actual Blob path to include the client's ID.
-        // This matches the path checked by submitPayment().
-        const securePath =
-          `legal-aid/${client.id}/payments/${caseId}/${safeName}`;
-
         return {
-          pathname: securePath,
+          pathname:
+            `legal-aid/${client.id}/payments/${caseId}/${safeName}`,
           allowedContentTypes: ALLOWED_TYPES,
           maximumSizeInBytes: MAX_FILE_SIZE,
           addRandomSuffix: true,
@@ -114,10 +99,10 @@ export async function POST(request: Request) {
       },
 
       onUploadCompleted: async ({ blob, tokenPayload }) => {
-        // Vercel calls this callback after an upload completes.
-        // The payment is recorded separately by submitPayment().
         if (!tokenPayload || !blob.url) {
-          throw new Error("Upload completion could not be verified.");
+          throw new Error(
+            "Upload completion could not be verified."
+          );
         }
       },
     });
@@ -126,14 +111,23 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Payment proof upload error:", error);
 
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Payment proof upload failed.";
+
+    // Do not expose internal storage or infrastructure errors.
+    const isAuthError =
+      message.includes("logged in") ||
+      message.includes("authorized");
+
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Payment proof upload failed.",
+        error: isAuthError
+          ? message
+          : "Payment proof upload failed. Please try again.",
       },
-      { status: 400 }
+      { status: isAuthError ? 403 : 400 }
     );
   }
 }
