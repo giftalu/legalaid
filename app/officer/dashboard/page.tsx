@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -15,12 +16,96 @@ import {
   chargeCase,
 } from "@/app/officer/actions";
 
-export default async function OfficerDashboard() {
+type DashboardSearchParams = {
+  from?: string | string[];
+  to?: string | string[];
+  caseType?: string | string[];
+};
+
+type OfficerDashboardProps = {
+  searchParams: Promise<DashboardSearchParams>;
+};
+
+/**
+ * Accept only valid YYYY-MM-DD dates.
+ * Using UTC boundaries avoids accidentally excluding cases
+ * submitted later on the selected end date.
+ */
+function parseDate(value: string | string[] | undefined): Date | null {
+  if (typeof value !== "string") return null;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== value
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function getSingleValue(
+  value: string | string[] | undefined
+): string {
+  return typeof value === "string" ? value : "";
+}
+
+export default async function OfficerDashboard({
+  searchParams,
+}: OfficerDashboardProps) {
   const officer = await requireUser("OFFICER");
 
   if (!officer) {
     redirect("/login");
   }
+
+  const params = await searchParams;
+
+  const fromValue = getSingleValue(params.from);
+  const toValue = getSingleValue(params.to);
+  const caseTypeValue = getSingleValue(params.caseType);
+
+  const fromDate = parseDate(fromValue);
+  const toDate = parseDate(toValue);
+
+  // Ignore an invalid or reversed date range.
+  const validDateRange =
+    (!fromValue || fromDate !== null) &&
+    (!toValue || toDate !== null) &&
+    (!fromDate || !toDate || fromDate <= toDate);
+
+  const dateFilter = validDateRange
+    ? {
+        ...(fromDate
+          ? {
+              gte: fromDate,
+            }
+          : {}),
+        ...(toDate
+          ? {
+              lt: new Date(toDate.getTime() + 24 * 60 * 60 * 1000),
+            }
+          : {}),
+      }
+    : {};
+
+  const caseWhere = {
+    ...(validDateRange &&
+    (fromDate || toDate)
+      ? {
+          createdAt: dateFilter,
+        }
+      : {}),
+    ...(caseTypeValue
+      ? {
+          caseType: caseTypeValue,
+        }
+      : {}),
+  };
 
   const [
     totalCases,
@@ -31,7 +116,11 @@ export default async function OfficerDashboard() {
     scheduledConsultations,
     resolvedCases,
     closedCases,
+    cases,
+    caseTypes,
   ] = await Promise.all([
+    // Counters intentionally remain global totals,
+    // independent of the active filters.
     db.case.count(),
 
     db.case.count({
@@ -75,29 +164,43 @@ export default async function OfficerDashboard() {
         status: "CLOSED",
       },
     }),
+
+    // Apply the selected filters to the case list.
+    db.case.findMany({
+      where: caseWhere,
+      include: {
+        user: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+
+    // Populate the case type dropdown from existing records.
+    db.case.findMany({
+      select: {
+        caseType: true,
+      },
+      distinct: ["caseType"],
+      orderBy: {
+        caseType: "asc",
+      },
+    }),
   ]);
 
-  const cases = await db.case.findMany({
-    include: {
-      user: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+  const availableCaseTypes = caseTypes
+    .map((item) => item.caseType)
+    .filter((type): type is string => Boolean(type));
+
+  const hasActiveFilters =
+    Boolean(fromValue || toValue || caseTypeValue);
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-6xl">
-
-        {/* ===================================================== */}
         {/* HEADER */}
-        {/* ===================================================== */}
-
         <header className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-
-            {/* User information */}
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-700">
                 {officer.name
@@ -110,7 +213,7 @@ export default async function OfficerDashboard() {
 
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Client Portal
+                  Officer Portal
                 </p>
 
                 <h1 className="mt-1 text-xl font-bold text-gray-900 sm:text-2xl">
@@ -122,8 +225,6 @@ export default async function OfficerDashboard() {
                 </p>
               </div>
             </div>
-
-            {/* Actions */}
 
             <div className="flex flex-col gap-2 sm:flex-row">
               <Link
@@ -143,15 +244,10 @@ export default async function OfficerDashboard() {
                 </button>
               </form>
             </div>
-
-
           </div>
         </header>
 
-        {/* ===================================================== */}
         {/* CASE COUNTERS */}
-        {/* ===================================================== */}
-
         <section className="mb-8">
           <div className="mb-4">
             <h2 className="text-lg font-bold text-gray-900">
@@ -159,12 +255,12 @@ export default async function OfficerDashboard() {
             </h2>
 
             <p className="text-sm text-gray-500">
-              Current status of all client cases.
+              Current status of all client cases. These totals are not
+              affected by the filters below.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
-
             <CounterCard
               title="Total"
               count={totalCases}
@@ -223,553 +319,628 @@ export default async function OfficerDashboard() {
           </div>
         </section>
 
-        {/* ===================================================== */}
-        {/* CASES */}
-        {/* ===================================================== */}
-
-        {cases.length === 0 ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
-            <p className="font-medium text-gray-700">
-              No cases have been submitted.
-            </p>
+        {/* FILTERS */}
+        <section className="mb-8 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-gray-900">
+              Filter Cases
+            </h2>
 
             <p className="mt-1 text-sm text-gray-500">
-              Client cases will appear here.
+              Filter cases by submission date and case type. You can
+              combine all three filters.
             </p>
           </div>
-        ) : (
-          <div className="space-y-6">
 
-            {cases.map((c) => (
-              <article
-                key={c.id}
-                className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+          <form
+            method="GET"
+            action="/officer/dashboard"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-end"
+          >
+            <div>
+              <label
+                htmlFor="from"
+                className="mb-1.5 block text-sm font-medium text-gray-700"
               >
+                From Date
+              </label>
 
-                {/* ================================================= */}
-                {/* CASE HEADER */}
-                {/* ================================================= */}
+              <input
+                id="from"
+                type="date"
+                name="from"
+                value={fromValue}
+                max={toValue || undefined}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
 
-                <div className="border-b border-gray-200 bg-gray-50 p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <label
+                htmlFor="to"
+                className="mb-1.5 block text-sm font-medium text-gray-700"
+              >
+                To Date
+              </label>
 
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Case Number
-                      </p>
+              <input
+                id="to"
+                type="date"
+                name="to"
+                value={toValue}
+                min={fromValue || undefined}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
 
-                      <h2 className="mt-1 break-all text-xl font-bold text-gray-900">
-                        {c.caseNumber}
-                      </h2>
+            <div>
+              <label
+                htmlFor="caseType"
+                className="mb-1.5 block text-sm font-medium text-gray-700"
+              >
+                Case Type
+              </label>
 
-                      <p className="mt-1 text-xs text-gray-500">
-                        Submitted{" "}
-                        {new Date(c.createdAt).toLocaleDateString(
-                          "en-MW",
-                          {
-                            day: "numeric",
-                            month: "long",
-                            year: "numeric",
-                          }
-                        )}
-                      </p>
+              <select
+                id="caseType"
+                name="caseType"
+                value={caseTypeValue}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">All case types</option>
+
+                {availableCaseTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
+              <button
+                type="submit"
+                className="inline-flex flex-1 items-center justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                Apply Filters
+              </button>
+
+              <Link
+                href="/officer/dashboard"
+                className="inline-flex flex-1 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+              >
+                Clear
+              </Link>
+            </div>
+          </form>
+
+          {hasActiveFilters && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
+              <span className="text-sm font-medium text-gray-600">
+                Active filters:
+              </span>
+
+              {fromDate && (
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  From: {fromValue}
+                </span>
+              )}
+
+              {toDate && (
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  To: {toValue}
+                </span>
+              )}
+
+              {caseTypeValue && (
+                <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">
+                  Type: {caseTypeValue.replaceAll("_", " ")}
+                </span>
+              )}
+
+              {!validDateRange && (
+                <p className="w-full text-sm font-medium text-red-600">
+                  The date range is invalid. Please select valid dates and
+                  ensure the From Date is not later than the To Date.
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* CASE LIST */}
+        <section>
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">
+                Client Cases
+              </h2>
+
+              <p className="text-sm text-gray-500">
+                {cases.length}{" "}
+                {cases.length === 1 ? "case" : "cases"} found
+                {hasActiveFilters ? " for the selected filters." : "."}
+              </p>
+            </div>
+          </div>
+
+          {cases.length === 0 ? (
+            <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
+              <p className="font-medium text-gray-700">
+                {hasActiveFilters
+                  ? "No cases match your selected filters."
+                  : "No cases have been submitted."}
+              </p>
+
+              <p className="mt-1 text-sm text-gray-500">
+                {hasActiveFilters
+                  ? "Try changing the dates or selecting a different case type."
+                  : "Client cases will appear here."}
+              </p>
+
+              {hasActiveFilters && (
+                <Link
+                  href="/officer/dashboard"
+                  className="mt-4 inline-flex rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Show All Cases
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {cases.map((c) => (
+                <article
+                  key={c.id}
+                  className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+                >
+                  {/* CASE HEADER */}
+                  <div className="border-b border-gray-200 bg-gray-50 p-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Case Number
+                        </p>
+
+                        <h2 className="mt-1 break-all text-xl font-bold text-gray-900">
+                          {c.caseNumber}
+                        </h2>
+
+                        <p className="mt-1 text-xs text-gray-500">
+                          Submitted{" "}
+                          {new Date(c.createdAt).toLocaleDateString(
+                            "en-MW",
+                            {
+                              day: "numeric",
+                              month: "long",
+                              year: "numeric",
+                            }
+                          )}
+                        </p>
+                      </div>
+
+                      <StatusBadge status={c.status} />
                     </div>
-
-                    <StatusBadge status={c.status} />
-                  </div>
-                </div>
-
-                <div className="p-5">
-
-                  {/* ================================================= */}
-                  {/* CLIENT */}
-                  {/* ================================================= */}
-
-                  <div className="rounded-xl border border-gray-200 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Client
-                    </p>
-
-                    <p className="mt-1 font-semibold text-gray-900">
-                      {c.user.name}
-                    </p>
-
-                    <p className="text-sm text-gray-500">
-                      {c.user.email}
-                    </p>
                   </div>
 
-                  {/* ================================================= */}
-                  {/* CASE INFORMATION */}
-                  {/* ================================================= */}
-
-                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-
+                  <div className="p-5">
+                    {/* CLIENT */}
                     <div className="rounded-xl border border-gray-200 p-4">
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Case Type
+                        Client
                       </p>
 
                       <p className="mt-1 font-semibold text-gray-900">
-                        {c.caseType}
+                        {c.user.name}
+                      </p>
+
+                      <p className="text-sm text-gray-500">
+                        {c.user.email}
                       </p>
                     </div>
 
-                    <div className="rounded-xl border border-gray-200 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Current Status
-                      </p>
+                    {/* CASE INFORMATION */}
+                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div className="rounded-xl border border-gray-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Case Type
+                        </p>
 
-                      <div className="mt-2">
-                        <StatusBadge status={c.status} />
+                        <p className="mt-1 font-semibold text-gray-900">
+                          {c.caseType}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-gray-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Current Status
+                        </p>
+
+                        <div className="mt-2">
+                          <StatusBadge status={c.status} />
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* ================================================= */}
-                  {/* DESCRIPTION */}
-                  {/* ================================================= */}
+                    {/* DESCRIPTION */}
+                    <div className="mt-4 rounded-xl bg-gray-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Case Description
+                      </p>
 
-                  <div className="mt-4 rounded-xl bg-gray-50 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Case Description
-                    </p>
+                      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-700">
+                        {c.description}
+                      </p>
+                    </div>
 
-                    <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-700">
-                      {c.description}
-                    </p>
-                  </div>
+                    {/* CLIENT DOCUMENTS */}
+                    <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Client Documents
+                      </p>
 
-                  {/* ================================================= */}
-                  {/* CLIENT DOCUMENTS */}
-                  {/* ================================================= */}
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        {c.nationalIdUrl && (
+                          <Link
+                            href={`/officer/cases/${c.id}/documents/national-id`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-lg bg-gray-900 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-gray-800"
+                          >
+                            View National ID
+                          </Link>
+                        )}
 
-                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        {c.recommendationUrl && (
+                          <Link
+                            href={`/officer/cases/${c.id}/documents/recommendation`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-lg bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
+                          >
+                            View Recommendation
+                          </Link>
+                        )}
 
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Client Documents
-                    </p>
-
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-
-                      {/* NATIONAL ID */}
-                      {c.nationalIdUrl && (
-                        <Link
-                          href={`/officer/cases/${c.id}/documents/national-id`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded-lg bg-gray-900 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-gray-800"
-                        >
-                          View National ID
-                        </Link>
-                      )}
-
-                      {/* RECOMMENDATION */}
-                      {c.recommendationUrl && (
-                        <Link
-                          href={`/officer/cases/${c.id}/documents/recommendation`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded-lg bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
-                        >
-                          View Recommendation
-                        </Link>
-                      )}
-
-                      {/* NO DOCUMENTS */}
-                      {!c.nationalIdUrl &&
-                        !c.recommendationUrl && (
+                        {!c.nationalIdUrl && !c.recommendationUrl && (
                           <p className="text-sm text-gray-500">
                             No documents uploaded.
                           </p>
                         )}
-                    </div>
-                  </div>
-
-                  {/* ================================================= */}
-                  {/* OFFICER COMMENT */}
-                  {/* ================================================= */}
-
-                  <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
-
-                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
-                      Officer Comment
-                    </p>
-
-                    {c.officerComment ? (
-                      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-blue-900">
-                        {c.officerComment}
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-sm text-blue-700">
-                        No comment has been added yet.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* ================================================= */}
-                  {/* CONSULTATION */}
-                  {/* ================================================= */}
-
-                  <div className="mt-4 rounded-xl border border-green-100 bg-green-50 p-4">
-
-                    <p className="text-xs font-semibold uppercase tracking-wide text-green-700">
-                      Consultation
-                    </p>
-
-                    {c.consultationAt ? (
-                      <div className="mt-3 space-y-1 text-sm text-green-900">
-
-                        <p>
-                          <strong>Date:</strong>{" "}
-                          {new Date(
-                            c.consultationAt
-                          ).toLocaleDateString("en-MW", {
-                            weekday: "long",
-                            day: "numeric",
-                            month: "long",
-                            year: "numeric",
-                          })}
-                        </p>
-
-                        <p>
-                          <strong>Time:</strong>{" "}
-                          {new Date(
-                            c.consultationAt
-                          ).toLocaleTimeString("en-MW", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-
-                        <p>
-                          <strong>Status:</strong>{" "}
-                          {c.consultationStatus.replaceAll(
-                            "_",
-                            " "
-                          )}
-                        </p>
                       </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-green-700">
-                        No consultation scheduled.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* ================================================= */}
-                  {/* OFFICER ACTIONS */}
-                  {/* ================================================= */}
-
-                  <div className="mt-5 rounded-xl border border-gray-200 bg-white p-4">
-
-                    <h3 className="font-semibold text-gray-900">
-                      Case Actions
-                    </h3>
-
-                    {/* ============================================= */}
-                    {/* APPROVE / REJECT */}
-                    {/* ============================================= */}
-
-                    <div className="mt-4">
-
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Review Case
-                      </p>
-
-                      <form
-                        action={updateCaseStatus}
-                        className="space-y-3"
-                      >
-
-                        <input
-                          type="hidden"
-                          name="id"
-                          value={c.id}
-                        />
-
-                        <textarea
-                          name="comment"
-                          rows={3}
-                          placeholder="Enter an officer comment..."
-                          defaultValue={c.officerComment ?? ""}
-                          className="w-full rounded-lg border border-gray-300 p-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                        />
-
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-
-                          <button
-                            type="submit"
-                            name="status"
-                            value="APPROVED"
-                            className="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
-                          >
-                            Approve Case
-                          </button>
-
-                          <button
-                            type="submit"
-                            name="status"
-                            value="REJECTED"
-                            className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
-                          >
-                            Reject Case
-                          </button>
-
-                        </div>
-                      </form>
                     </div>
 
-                    {/* ============================================= */}
-                    {/* CONSULTATION SCHEDULING */}
-                    {/* ============================================= */}
-
-                    <div className="mt-6 border-t border-gray-200 pt-5">
-
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        {c.consultationAt
-                          ? "Reschedule Consultation"
-                          : "Schedule Consultation"}
+                    {/* OFFICER COMMENT */}
+                    <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                        Officer Comment
                       </p>
 
-                      <form
-                        action={scheduleConsultation}
-                        className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
-                      >
-
-                        <input
-                          type="hidden"
-                          name="id"
-                          value={c.id}
-                        />
-
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-600">
-                            Date
-                          </label>
-
-                          <input
-                            type="date"
-                            name="consultationDate"
-                            required
-                            className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-600">
-                            Time
-                          </label>
-
-                          <input
-                            type="time"
-                            name="consultationTime"
-                            required
-                            className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
-                          />
-                        </div>
-
-                        <button
-                          type="submit"
-                          className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
-                        >
-                          {c.consultationAt
-                            ? "Reschedule"
-                            : "Schedule Consultation"}
-                        </button>
-
-                      </form>
+                      {c.officerComment ? (
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-blue-900">
+                          {c.officerComment}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-sm text-blue-700">
+                          No comment has been added yet.
+                        </p>
+                      )}
                     </div>
-                    {/* ============================================= */}
-                    {/* CASE CHARGING */}
-                    {/* ============================================= */}
 
-                    <div className="mt-6 border-t border-gray-200 pt-5">
-
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Case Charging
+                    {/* CONSULTATION */}
+                    <div className="mt-4 rounded-xl border border-green-100 bg-green-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-green-700">
+                        Consultation
                       </p>
 
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      {c.consultationAt ? (
+                        <div className="mt-3 space-y-1 text-sm text-green-900">
+                          <p>
+                            <strong>Date:</strong>{" "}
+                            {new Date(c.consultationAt).toLocaleDateString(
+                              "en-MW",
+                              {
+                                weekday: "long",
+                                day: "numeric",
+                                month: "long",
+                                year: "numeric",
+                              }
+                            )}
+                          </p>
 
-                        <div className="mb-4">
-                          <h4 className="font-semibold text-gray-900">
-                            Assign / Update Case Fee
-                          </h4>
+                          <p>
+                            <strong>Time:</strong>{" "}
+                            {new Date(c.consultationAt).toLocaleTimeString(
+                              "en-MW",
+                              {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }
+                            )}
+                          </p>
 
-                          <p className="mt-1 text-sm text-gray-600">
-                            Set the amount the client is required to pay for this case.
+                          <p>
+                            <strong>Status:</strong>{" "}
+                            {c.consultationStatus.replaceAll("_", " ")}
                           </p>
                         </div>
+                      ) : (
+                        <p className="mt-2 text-sm text-green-700">
+                          No consultation scheduled.
+                        </p>
+                      )}
+                    </div>
 
-                        {c.assignedFee !== null && c.assignedFee !== undefined && (
-                          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {/* OFFICER ACTIONS */}
+                    <div className="mt-5 rounded-xl border border-gray-200 bg-white p-4">
+                      <h3 className="font-semibold text-gray-900">
+                        Case Actions
+                      </h3>
 
-                            <div className="rounded-lg border border-amber-200 bg-white p-3">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                Assigned Fee
-                              </p>
-
-                              <p className="mt-1 text-lg font-bold text-gray-900">
-                                MWK {Number(c.assignedFee).toLocaleString("en-MW")}
-                              </p>
-                            </div>
-
-                            <div className="rounded-lg border border-amber-200 bg-white p-3">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                Description
-                              </p>
-
-                              <p className="mt-1 text-sm text-gray-700">
-                                {c.feeDescription || "No description provided"}
-                              </p>
-                            </div>
-
-                            <div className="rounded-lg border border-amber-200 bg-white p-3">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                Charged On
-                              </p>
-
-                              <p className="mt-1 text-sm text-gray-700">
-                                {c.feeAssignedAt
-                                  ? new Date(c.feeAssignedAt).toLocaleDateString("en-MW", {
-                                    day: "numeric",
-                                    month: "long",
-                                    year: "numeric",
-                                  })
-                                  : "Not recorded"}
-                              </p>
-                            </div>
-
-                          </div>
-                        )}
+                      {/* APPROVE / REJECT */}
+                      <div className="mt-4">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Review Case
+                        </p>
 
                         <form
-                          action={chargeCase}
-                          className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
+                          action={updateCaseStatus}
+                          className="space-y-3"
                         >
+                          <input type="hidden" name="id" value={c.id} />
 
-                          <input
-                            type="hidden"
-                            name="id"
-                            value={c.id}
+                          <textarea
+                            name="comment"
+                            rows={3}
+                            placeholder="Enter an officer comment..."
+                            defaultValue={c.officerComment ?? ""}
+                            className="w-full rounded-lg border border-gray-300 p-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                           />
 
-                          <div>
-                            <label
-                              htmlFor={`amount-${c.id}`}
-                              className="mb-1 block text-xs font-medium text-gray-700"
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <button
+                              type="submit"
+                              name="status"
+                              value="APPROVED"
+                              className="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
                             >
-                              Amount (MWK)
+                              Approve Case
+                            </button>
+
+                            <button
+                              type="submit"
+                              name="status"
+                              value="REJECTED"
+                              className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+                            >
+                              Reject Case
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+
+                      {/* CONSULTATION SCHEDULING */}
+                      <div className="mt-6 border-t border-gray-200 pt-5">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          {c.consultationAt
+                            ? "Reschedule Consultation"
+                            : "Schedule Consultation"}
+                        </p>
+
+                        <form
+                          action={scheduleConsultation}
+                          className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
+                        >
+                          <input type="hidden" name="id" value={c.id} />
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">
+                              Date
                             </label>
 
                             <input
-                              id={`amount-${c.id}`}
-                              type="number"
-                              name="amount"
-                              min="1"
-                              step="0.01"
+                              type="date"
+                              name="consultationDate"
                               required
-                              defaultValue={
-                                c.assignedFee !== null && c.assignedFee !== undefined
-                                  ? Number(c.assignedFee)
-                                  : ""
-                              }
-                              placeholder="Enter amount"
-                              className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                              className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
                             />
                           </div>
 
                           <div>
-                            <label
-                              htmlFor={`description-${c.id}`}
-                              className="mb-1 block text-xs font-medium text-gray-700"
-                            >
-                              Charge Description
+                            <label className="mb-1 block text-xs font-medium text-gray-600">
+                              Time
                             </label>
 
                             <input
-                              id={`description-${c.id}`}
-                              type="text"
-                              name="description"
-                              maxLength={500}
-                              defaultValue={c.feeDescription ?? ""}
-                              placeholder="e.g. Legal consultation fee"
-                              className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                              type="time"
+                              name="consultationTime"
+                              required
+                              className="w-full rounded-lg border border-gray-300 p-2.5 text-sm"
                             />
                           </div>
 
                           <button
                             type="submit"
-                            className="rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700"
+                            className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
                           >
-                            {c.assignedFee !== null && c.assignedFee !== undefined
-                              ? "Update Charge"
-                              : "Charge Case"}
+                            {c.consultationAt
+                              ? "Reschedule"
+                              : "Schedule Consultation"}
                           </button>
-
                         </form>
-
                       </div>
-                    </div>
 
-                    {/* ============================================= */}
-                    {/* CASE MANAGEMENT */}
-                    {/* ============================================= */}
+                      {/* CASE CHARGING */}
+                      <div className="mt-6 border-t border-gray-200 pt-5">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Case Charging
+                        </p>
 
-                    <div className="mt-6 border-t border-gray-200 pt-5">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                          <div className="mb-4">
+                            <h4 className="font-semibold text-gray-900">
+                              Assign / Update Case Fee
+                            </h4>
 
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Manage Case
-                      </p>
+                            <p className="mt-1 text-sm text-gray-600">
+                              Set the amount the client is required to pay
+                              for this case.
+                            </p>
+                          </div>
 
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          {c.assignedFee !== null &&
+                            c.assignedFee !== undefined && (
+                              <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                <div className="rounded-lg border border-amber-200 bg-white p-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    Assigned Fee
+                                  </p>
 
-                        {/* VIEW */}
-                        <Link
-                          href={`/officer/cases/${c.id}`}
-                          className="rounded-lg bg-gray-900 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-gray-800"
-                        >
-                          View Case
-                        </Link>
+                                  <p className="mt-1 text-lg font-bold text-gray-900">
+                                    MWK{" "}
+                                    {Number(c.assignedFee).toLocaleString(
+                                      "en-MW"
+                                    )}
+                                  </p>
+                                </div>
 
-                        {/* EDIT */}
-                        <Link
-                          href={`/officer/cases/${c.id}/edit`}
-                          className="rounded-lg bg-amber-500 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-amber-600"
-                        >
-                          Edit Case
-                        </Link>
+                                <div className="rounded-lg border border-amber-200 bg-white p-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    Description
+                                  </p>
 
-                        {/* DELETE */}
-                        <DeleteCaseButton
-                          caseId={c.id}
-                          caseNumber={c.caseNumber}
-                          deleteAction={deleteCase}
-                        />
+                                  <p className="mt-1 text-sm text-gray-700">
+                                    {c.feeDescription ||
+                                      "No description provided"}
+                                  </p>
+                                </div>
 
+                                <div className="rounded-lg border border-amber-200 bg-white p-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    Charged On
+                                  </p>
+
+                                  <p className="mt-1 text-sm text-gray-700">
+                                    {c.feeAssignedAt
+                                      ? new Date(
+                                          c.feeAssignedAt
+                                        ).toLocaleDateString("en-MW", {
+                                          day: "numeric",
+                                          month: "long",
+                                          year: "numeric",
+                                        })
+                                      : "Not recorded"}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                          <form
+                            action={chargeCase}
+                            className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
+                          >
+                            <input type="hidden" name="id" value={c.id} />
+
+                            <div>
+                              <label
+                                htmlFor={`amount-${c.id}`}
+                                className="mb-1 block text-xs font-medium text-gray-700"
+                              >
+                                Amount (MWK)
+                              </label>
+
+                              <input
+                                id={`amount-${c.id}`}
+                                type="number"
+                                name="amount"
+                                min="1"
+                                step="0.01"
+                                required
+                                defaultValue={
+                                  c.assignedFee !== null &&
+                                  c.assignedFee !== undefined
+                                    ? Number(c.assignedFee)
+                                    : ""
+                                }
+                                placeholder="Enter amount"
+                                className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label
+                                htmlFor={`description-${c.id}`}
+                                className="mb-1 block text-xs font-medium text-gray-700"
+                              >
+                                Charge Description
+                              </label>
+
+                              <input
+                                id={`description-${c.id}`}
+                                type="text"
+                                name="description"
+                                maxLength={500}
+                                defaultValue={c.feeDescription ?? ""}
+                                placeholder="e.g. Legal consultation fee"
+                                className="w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                              />
+                            </div>
+
+                            <button
+                              type="submit"
+                              className="rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700"
+                            >
+                              {c.assignedFee !== null &&
+                              c.assignedFee !== undefined
+                                ? "Update Charge"
+                                : "Charge Case"}
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+
+                      {/* CASE MANAGEMENT */}
+                      <div className="mt-6 border-t border-gray-200 pt-5">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Manage Case
+                        </p>
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <Link
+                            href={`/officer/cases/${c.id}`}
+                            className="rounded-lg bg-gray-900 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-gray-800"
+                          >
+                            View Case
+                          </Link>
+
+                          <Link
+                            href={`/officer/cases/${c.id}/edit`}
+                            className="rounded-lg bg-amber-500 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-amber-600"
+                          >
+                            Edit Case
+                          </Link>
+
+                          <DeleteCaseButton
+                            caseId={c.id}
+                            caseNumber={c.caseNumber}
+                            deleteAction={deleteCase}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );
 }
 
-/* ========================================================= */
 /* STATUS BADGE */
-/* ========================================================= */
-
-function StatusBadge({
-  status,
-}: {
-  status: string;
-}) {
+function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     PENDING: "bg-yellow-100 text-yellow-700",
     APPROVED: "bg-green-100 text-green-700",
@@ -783,18 +954,16 @@ function StatusBadge({
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${styles[status] ?? "bg-gray-100 text-gray-700"
-        }`}
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+        styles[status] ?? "bg-gray-100 text-gray-700"
+      }`}
     >
       {status.replaceAll("_", " ")}
     </span>
   );
 }
 
-/* ========================================================= */
 /* COUNTER CARD */
-/* ========================================================= */
-
 function CounterCard({
   title,
   count,
@@ -807,16 +976,12 @@ function CounterCard({
   textClass: string;
 }) {
   return (
-    <div
-      className={`rounded-2xl border p-4 shadow-sm ${className}`}
-    >
+    <div className={`rounded-2xl border p-4 shadow-sm ${className}`}>
       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
         {title}
       </p>
 
-      <p
-        className={`mt-2 text-3xl font-bold ${textClass}`}
-      >
+      <p className={`mt-2 text-3xl font-bold ${textClass}`}>
         {count}
       </p>
     </div>

@@ -7,12 +7,56 @@ import { db } from "@/lib/db";
 import { deleteClientCase } from "../actions";
 import { logout } from "@/app/login/actions";
 
-export default async function ClientDashboard() {
+type DashboardSearchParams = {
+  from?: string;
+  to?: string;
+  type?: string;
+};
+
+function parseDate(value?: string): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  // Reject impossible dates such as February 31.
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== value
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+export default async function ClientDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<DashboardSearchParams>;
+}) {
   const user = await requireUser("CLIENT");
 
   if (!user) {
     redirect("/login");
   }
+
+  const filters = await searchParams;
+  const fromValue = filters.from?.trim() ?? "";
+  const toValue = filters.to?.trim() ?? "";
+  const requestedType = filters.type?.trim() ?? "";
+
+  const fromDate = fromValue ? parseDate(fromValue) : null;
+  const toDate = toValue ? parseDate(toValue) : null;
+
+  const invalidFrom = Boolean(fromValue && !fromDate);
+  const invalidTo = Boolean(toValue && !toDate);
+  const invalidDateRange =
+    Boolean(fromDate && toDate && fromDate > toDate);
+
+  const dateFiltersValid =
+    !invalidFrom && !invalidTo && !invalidDateRange;
 
   const [
     totalCases,
@@ -21,6 +65,7 @@ export default async function ClientDashboard() {
     rejectedCases,
     inProgressCases,
     scheduledConsultations,
+    caseTypes,
   ] = await Promise.all([
     db.case.count({ where: { userId: user.id } }),
     db.case.count({
@@ -41,10 +86,43 @@ export default async function ClientDashboard() {
         consultationStatus: "SCHEDULED",
       },
     }),
+    db.case.findMany({
+      where: { userId: user.id },
+      select: { caseType: true },
+      distinct: ["caseType"],
+      orderBy: { caseType: "asc" },
+    }),
   ]);
 
+  const availableTypes = caseTypes.map((item) => item.caseType);
+  const selectedType = availableTypes.includes(requestedType)
+    ? requestedType
+    : "";
+
+  const createdAtFilter: {
+    gte?: Date;
+    lt?: Date;
+  } = {};
+
+  if (dateFiltersValid && fromDate) {
+    createdAtFilter.gte = fromDate;
+  }
+
+  if (dateFiltersValid && toDate) {
+    const endExclusive = new Date(toDate);
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+    createdAtFilter.lt = endExclusive;
+  }
+
   const cases = await db.case.findMany({
-    where: { userId: user.id },
+    where: {
+      userId: user.id,
+      ...(selectedType ? { caseType: selectedType } : {}),
+      ...(dateFiltersValid &&
+      (fromDate || toDate)
+        ? { createdAt: createdAtFilter }
+        : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -138,24 +216,122 @@ export default async function ClientDashboard() {
           <div className="mb-4">
             <h2 className="text-lg font-bold text-gray-900">My Cases</h2>
             <p className="text-sm text-gray-500">
-              View the progress and communication for your cases.
+              View and filter your cases by submission date and case type.
             </p>
           </div>
+
+          {/* Filters */}
+          <form
+            method="GET"
+            action="/client/dashboard"
+            className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5"
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label
+                  htmlFor="from"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
+                  From date
+                </label>
+                <input
+                  id="from"
+                  name="from"
+                  type="date"
+                  defaultValue={fromValue}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="to"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
+                  To date
+                </label>
+                <input
+                  id="to"
+                  name="to"
+                  type="date"
+                  defaultValue={toValue}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="type"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
+                  Case type
+                </label>
+                <select
+                  id="type"
+                  name="type"
+                  defaultValue={selectedType}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                >
+                  <option value="">All case types</option>
+                  {availableTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type.replaceAll("_", " ")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-end gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Apply Filters
+                </button>
+                <Link
+                  href="/client/dashboard"
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-center text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Reset
+                </Link>
+              </div>
+            </div>
+
+            {(invalidFrom || invalidTo || invalidDateRange) && (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {invalidDateRange
+                  ? "The start date must be on or before the end date."
+                  : "One of the dates is invalid. Please select valid dates and try again."}
+                {" "}The date filter has not been applied.
+              </p>
+            )}
+
+            <p className="mt-3 text-sm text-gray-500">
+              Showing {cases.length}{" "}
+              {cases.length === 1 ? "case" : "cases"} matching your filters.
+            </p>
+          </form>
 
           {cases.length === 0 ? (
             <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
               <h3 className="text-lg font-semibold text-gray-900">
-                No cases yet
+                {totalCases === 0
+                  ? "No cases yet"
+                  : "No cases match your filters"}
               </h3>
               <p className="mt-2 text-sm text-gray-500">
-                You have not submitted any legal cases yet.
+                {totalCases === 0
+                  ? "You have not submitted any legal cases yet."
+                  : "Try changing the dates or selecting a different case type."}
               </p>
-              <Link
-                href="/client/cases/new"
-                className="mt-5 inline-block rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
-              >
-                Register a Case
-              </Link>
+              {totalCases === 0 && (
+                <Link
+                  href="/client/cases/new"
+                  className="mt-5 inline-block rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Register a Case
+                </Link>
+              )}
             </div>
           ) : (
             <div className="space-y-5">
@@ -181,7 +357,6 @@ export default async function ClientDashboard() {
 
                   {/* Case Content */}
                   <div className="p-4 sm:p-5">
-                    {/* Case Type and Submitted Date */}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="rounded-xl border border-gray-200 p-4">
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -206,7 +381,7 @@ export default async function ClientDashboard() {
                       </div>
                     </div>
 
-                    {/* CASE CHARGES — ADDED HERE */}
+                    {/* Case Charges */}
                     <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
