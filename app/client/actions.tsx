@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { put } from "@vercel/blob";
+
 
 export async function deleteClientCase(formData: FormData) {
   const user = await requireUser("CLIENT");
@@ -137,6 +137,13 @@ export async function updateClientCase(formData: FormData) {
 /**
  * Client submits proof of payment
  */
+
+/**
+ * Client submits proof of payment.
+ *
+ * PaymentProofForm uploads the document to Vercel Blob first.
+ * This action validates the uploaded URL and saves the payment.
+ */
 export async function submitPayment(formData: FormData) {
   const client = await requireUser("CLIENT");
 
@@ -144,21 +151,30 @@ export async function submitPayment(formData: FormData) {
     redirect("/login");
   }
 
-  const caseId = Number(formData.get("caseId"));
+  const rawCaseId = formData.get("caseId");
+  const caseId = Number(rawCaseId);
+
   const amountValue = String(
-    formData.get("amount") || ""
+    formData.get("amount") ?? ""
   ).trim();
 
   const transactionId = String(
-    formData.get("transactionId") || ""
+    formData.get("transactionId") ?? ""
   ).trim();
 
-  const proof = formData.get("proof");
+  const rawProofUrl = formData.get("proofUrl");
+  const rawProofFileName = formData.get("proofFileName");
 
-  if (!Number.isInteger(caseId) || caseId <= 0) {
+  // Validate case ID.
+  if (
+    typeof rawCaseId !== "string" ||
+    !Number.isInteger(caseId) ||
+    caseId <= 0
+  ) {
     throw new Error("Valid case ID is required.");
   }
 
+  // Validate amount.
   const amount = Number(amountValue);
 
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -167,46 +183,87 @@ export async function submitPayment(formData: FormData) {
     );
   }
 
+  // Validate transaction reference.
   if (!transactionId) {
-    throw new Error(
-      "Transaction ID is required."
-    );
+    throw new Error("Transaction ID is required.");
   }
 
   if (transactionId.length > 200) {
+    throw new Error("Transaction ID is too long.");
+  }
+
+  // Validate uploaded proof details.
+  if (
+    typeof rawProofUrl !== "string" ||
+    !rawProofUrl.trim()
+  ) {
     throw new Error(
-      "Transaction ID is too long."
+      "Please upload your proof of payment."
     );
   }
 
-  if (!(proof instanceof File) || proof.size === 0) {
+  if (
+    typeof rawProofFileName !== "string" ||
+    !rawProofFileName.trim()
+  ) {
     throw new Error(
-      "Proof of payment is required."
+      "Proof of payment filename is missing."
     );
   }
 
-  const MAX_FILE_SIZE = 10 * 1024 * 1024;
+  const proofFileName = rawProofFileName.trim();
 
-  if (proof.size > MAX_FILE_SIZE) {
+  if (
+    proofFileName.length > 255 ||
+    /[/\\\u0000-\u001F]/.test(proofFileName)
+  ) {
+    throw new Error("Invalid proof of payment filename.");
+  }
+
+  // Validate the storage URL.
+  let proofUrl: URL;
+
+  try {
+    proofUrl = new URL(rawProofUrl);
+  } catch {
+    throw new Error("Invalid proof of payment URL.");
+  }
+
+  if (
+    proofUrl.protocol !== "https:" ||
+    proofUrl.username ||
+    proofUrl.password ||
+    proofUrl.port ||
+    !proofUrl.hostname.endsWith(
+      ".blob.vercel-storage.com"
+    )
+  ) {
     throw new Error(
-      "Proof of payment must not exceed 10 MB."
+      "Invalid document storage URL."
     );
   }
 
-  const allowedTypes = [
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-  ];
+  // Confirm that the uploaded document belongs to this
+  // client's case. The upload endpoint must use this path.
+  const expectedPath =
+    `/legal-aid/${client.id}/payments/${caseId}/`;
 
-  if (!allowedTypes.includes(proof.type)) {
+  let decodedPath: string;
+
+  try {
+    decodedPath = decodeURIComponent(proofUrl.pathname);
+  } catch {
+    throw new Error("Invalid proof of payment URL.");
+  }
+
+  if (!decodedPath.startsWith(expectedPath)) {
     throw new Error(
-      "Proof must be a PDF, JPG, PNG, or WebP file."
+      "The uploaded proof does not belong to this case."
     );
   }
 
-  const existingCase = await db.case.findFirst({
+  // Confirm ownership of the case.
+  const caseItem = await db.case.findFirst({
     where: {
       id: caseId,
       userId: client.id,
@@ -218,23 +275,28 @@ export async function submitPayment(formData: FormData) {
     },
   });
 
-  if (!existingCase) {
+  if (!caseItem) {
     throw new Error("Case not found.");
   }
 
   const assignedFee = Number(
-    existingCase.assignedFee ?? 0
+    caseItem.assignedFee ?? 0
   );
 
-  if (assignedFee <= 0) {
+  if (
+    !Number.isFinite(assignedFee) ||
+    assignedFee <= 0
+  ) {
     throw new Error(
       "This case has not been charged yet."
     );
   }
 
-  const existingPayments = await db.payment.findMany({
+  // Calculate the amount already paid.
+  const paidPayments = await db.payment.findMany({
     where: {
       caseId,
+      userId: client.id,
       status: "PAID",
     },
     select: {
@@ -242,9 +304,8 @@ export async function submitPayment(formData: FormData) {
     },
   });
 
-  const paidAmount = existingPayments.reduce(
-    (sum, payment) =>
-      sum + Number(payment.amount),
+  const paidAmount = paidPayments.reduce(
+    (sum, payment) => sum + Number(payment.amount),
     0
   );
 
@@ -253,53 +314,46 @@ export async function submitPayment(formData: FormData) {
     0
   );
 
-  if (amount > outstanding) {
-    throw new Error(
-      `Payment cannot exceed the outstanding amount of MWK ${outstanding.toLocaleString()}.`
-    );
-  }
-
   if (outstanding <= 0) {
     throw new Error(
       "This case has already been fully paid."
     );
   }
 
-  const existingPendingPayment =
-    await db.payment.findFirst({
-      where: {
-        caseId,
-        status: {
-          in: ["PENDING", "PROCESSING"],
-        },
-      },
-    });
+  if (amount > outstanding) {
+    throw new Error(
+      `Payment cannot exceed the outstanding amount of MWK ${outstanding.toLocaleString()}.`
+    );
+  }
 
-  if (existingPendingPayment) {
+  // Prevent duplicate pending payment submissions.
+  const pendingPayment = await db.payment.findFirst({
+    where: {
+      caseId,
+      userId: client.id,
+      status: {
+        in: ["PENDING", "PROCESSING"],
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (pendingPayment) {
     throw new Error(
       "There is already a payment awaiting officer review for this case."
     );
   }
 
-  const safeFileName = proof.name
-    .replace(/[^a-zA-Z0-9._-]/g, "-")
-    .slice(0, 150);
+  const reference =
+    `PAY-${caseId}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)
+      .toUpperCase()}`;
 
-  const blob = await put(
-    `legal-aid/${client.id}/payments/${caseId}/${Date.now()}-${safeFileName}`,
-    proof,
-    {
-      access: "private",
-      addRandomSuffix: true,
-      contentType: proof.type,
-    }
-  );
-
-  const reference = `PAY-${caseId}-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 8)
-    .toUpperCase()}`;
-
+  // The file has already been uploaded.
+  // Do not upload it again in this server action.
   await db.payment.create({
     data: {
       caseId,
@@ -311,10 +365,10 @@ export async function submitPayment(formData: FormData) {
       provider: "MANUAL",
       providerReference: transactionId,
       transactionId,
-      proofFileName: proof.name,
-      proofUrl: blob.url,
+      proofFileName,
+      proofUrl: proofUrl.href,
       paymentSubmittedAt: new Date(),
-      description: `Payment for case ${existingCase.caseNumber}`,
+      description: `Payment for case ${caseItem.caseNumber}`,
     },
   });
 

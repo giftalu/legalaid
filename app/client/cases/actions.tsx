@@ -1,10 +1,14 @@
+
 "use server";
 
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
+/**
+ * Delete a case belonging to the logged-in client.
+ */
 export async function deleteClientCase(formData: FormData) {
   const user = await requireUser("CLIENT");
 
@@ -12,23 +16,29 @@ export async function deleteClientCase(formData: FormData) {
     redirect("/login");
   }
 
-  const id = Number(formData.get("id"));
+  const rawId = formData.get("id");
+  const id = Number(rawId);
 
-  if (!Number.isInteger(id) || id <= 0) {
+  if (
+    typeof rawId !== "string" ||
+    !Number.isInteger(id) ||
+    id <= 0
+  ) {
     throw new Error("Invalid case ID.");
   }
 
-  // IMPORTANT:
-  // Only delete a case belonging to the logged-in client.
   const existingCase = await db.case.findFirst({
     where: {
       id,
       userId: user.id,
     },
+    select: {
+      id: true,
+    },
   });
 
   if (!existingCase) {
-    throw new Error("Case not found.");
+    throw new Error("Case not found or you do not have permission to delete it.");
   }
 
   await db.case.delete({
@@ -42,6 +52,9 @@ export async function deleteClientCase(formData: FormData) {
   redirect("/client/dashboard");
 }
 
+/**
+ * Update a case belonging to the logged-in client.
+ */
 export async function updateClientCase(formData: FormData) {
   const user = await requireUser("CLIENT");
 
@@ -49,17 +62,27 @@ export async function updateClientCase(formData: FormData) {
     redirect("/login");
   }
 
-  const id = Number(formData.get("id"));
+  const rawId = formData.get("id");
+  const id = Number(rawId);
 
-  const caseType = String(
-    formData.get("caseType") || ""
-  ).trim();
+  const rawCaseType = formData.get("caseType");
+  const rawDescription = formData.get("description");
 
-  const description = String(
-    formData.get("description") || ""
-  ).trim();
+  const caseType =
+    typeof rawCaseType === "string"
+      ? rawCaseType.trim()
+      : "";
 
-  if (!Number.isInteger(id) || id <= 0) {
+  const description =
+    typeof rawDescription === "string"
+      ? rawDescription.trim()
+      : "";
+
+  if (
+    typeof rawId !== "string" ||
+    !Number.isInteger(id) ||
+    id <= 0
+  ) {
     throw new Error("Invalid case ID.");
   }
 
@@ -73,28 +96,31 @@ export async function updateClientCase(formData: FormData) {
     );
   }
 
-  // Only allow the client to modify their own case.
   const existingCase = await db.case.findFirst({
     where: {
       id,
       userId: user.id,
     },
+    select: {
+      id: true,
+      status: true,
+    },
   });
 
   if (!existingCase) {
-    throw new Error("Case not found.");
+    throw new Error("Case not found or you do not have permission to edit it.");
   }
 
-  // Once an officer has approved/rejected the case,
-  // don't allow the client to overwrite the reviewed case.
-  if (
-    existingCase.status === "APPROVED" ||
-    existingCase.status === "REJECTED" ||
-    existingCase.status === "RESOLVED" ||
-    existingCase.status === "CLOSED"
-  ) {
+  const lockedStatuses = [
+    "APPROVED",
+    "REJECTED",
+    "RESOLVED",
+    "CLOSED",
+  ];
+
+  if (lockedStatuses.includes(existingCase.status)) {
     throw new Error(
-      "This case can no longer be edited."
+      "This case can no longer be edited because it has already been reviewed."
     );
   }
 
