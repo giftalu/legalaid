@@ -1,13 +1,12 @@
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { LogOut } from "lucide-react";
 
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-
 import DeleteCaseButton from "@/app/officer/components/DeleteCaseButton";
 import { logout } from "@/app/login/actions";
-import { LogOut } from "lucide-react";
 
 import {
   updateCaseStatus,
@@ -26,15 +25,28 @@ type OfficerDashboardProps = {
   searchParams: Promise<DashboardSearchParams>;
 };
 
-/**
- * Accept only valid YYYY-MM-DD dates.
- * Using UTC boundaries avoids accidentally excluding cases
- * submitted later on the selected end date.
- */
-function parseDate(value: string | string[] | undefined): Date | null {
-  if (typeof value !== "string") return null;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MALAWI_UTC_OFFSET_MS = 2 * 60 * 60 * 1000;
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+function getSingleValue(
+  value: string | string[] | undefined
+): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Accepts only real dates in YYYY-MM-DD format.
+ */
+function parseDate(
+  value: string | string[] | undefined
+): Date | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
 
   const date = new Date(`${value}T00:00:00.000Z`);
 
@@ -48,10 +60,21 @@ function parseDate(value: string | string[] | undefined): Date | null {
   return date;
 }
 
-function getSingleValue(
-  value: string | string[] | undefined
-): string {
-  return typeof value === "string" ? value : "";
+/**
+ * Converts a selected Malawi calendar date into its UTC boundary.
+ *
+ * Malawi uses UTC+2. For example, midnight on 10 October in Malawi
+ * is 22:00 UTC on 9 October.
+ */
+function malawiDateBoundary(
+  date: Date,
+  dayOffset = 0
+): Date {
+  return new Date(
+    date.getTime() +
+      dayOffset * DAY_MS -
+      MALAWI_UTC_OFFSET_MS
+  );
 }
 
 export default async function OfficerDashboard({
@@ -72,32 +95,39 @@ export default async function OfficerDashboard({
   const fromDate = parseDate(fromValue);
   const toDate = parseDate(toValue);
 
-  // Ignore an invalid or reversed date range.
   const validDateRange =
     (!fromValue || fromDate !== null) &&
     (!toValue || toDate !== null) &&
-    (!fromDate || !toDate || fromDate <= toDate);
+    (!fromDate ||
+      !toDate ||
+      fromDate.getTime() <= toDate.getTime());
 
-  const dateFilter = validDateRange
-    ? {
-        ...(fromDate
-          ? {
-              gte: fromDate,
-            }
-          : {}),
-        ...(toDate
-          ? {
-              lt: new Date(toDate.getTime() + 24 * 60 * 60 * 1000),
-            }
-          : {}),
-      }
-    : {};
-
+  /*
+   * Build the Prisma filter.
+   *
+   * createdAt uses inclusive Malawi calendar dates:
+   * - From date: midnight on that date, Malawi time.
+   * - To date: midnight on the following date, Malawi time,
+   *   exclusive, so the selected end date is fully included.
+   *
+   * If the date range is invalid, date filtering is ignored.
+   * A valid case-type filter can still be applied.
+   */
   const caseWhere = {
-    ...(validDateRange &&
-    (fromDate || toDate)
+    ...(validDateRange && (fromDate || toDate)
       ? {
-          createdAt: dateFilter,
+          createdAt: {
+            ...(fromDate
+              ? {
+                  gte: malawiDateBoundary(fromDate),
+                }
+              : {}),
+            ...(toDate
+              ? {
+                  lt: malawiDateBoundary(toDate, 1),
+                }
+              : {}),
+          },
         }
       : {}),
     ...(caseTypeValue
@@ -119,53 +149,38 @@ export default async function OfficerDashboard({
     cases,
     caseTypes,
   ] = await Promise.all([
-    // Counters intentionally remain global totals,
-    // independent of the active filters.
+    // Global counters are intentionally unaffected by filters.
     db.case.count(),
 
     db.case.count({
-      where: {
-        status: "PENDING",
-      },
+      where: { status: "PENDING" },
     }),
 
     db.case.count({
-      where: {
-        status: "APPROVED",
-      },
+      where: { status: "APPROVED" },
     }),
 
     db.case.count({
-      where: {
-        status: "REJECTED",
-      },
+      where: { status: "REJECTED" },
     }),
 
     db.case.count({
-      where: {
-        status: "IN_PROGRESS",
-      },
+      where: { status: "IN_PROGRESS" },
     }),
 
     db.case.count({
-      where: {
-        consultationStatus: "SCHEDULED",
-      },
+      where: { consultationStatus: "SCHEDULED" },
     }),
 
     db.case.count({
-      where: {
-        status: "RESOLVED",
-      },
+      where: { status: "RESOLVED" },
     }),
 
     db.case.count({
-      where: {
-        status: "CLOSED",
-      },
+      where: { status: "CLOSED" },
     }),
 
-    // Apply the selected filters to the case list.
+    // This is the only query affected by the selected filters.
     db.case.findMany({
       where: caseWhere,
       include: {
@@ -176,7 +191,7 @@ export default async function OfficerDashboard({
       },
     }),
 
-    // Populate the case type dropdown from existing records.
+    // Get existing case types for the dropdown.
     db.case.findMany({
       select: {
         caseType: true,
@@ -190,10 +205,33 @@ export default async function OfficerDashboard({
 
   const availableCaseTypes = caseTypes
     .map((item) => item.caseType)
-    .filter((type): type is string => Boolean(type));
+    .filter(
+      (type): type is string =>
+        typeof type === "string" && type.length > 0
+    );
 
-  const hasActiveFilters =
-    Boolean(fromValue || toValue || caseTypeValue);
+  // Keep a selected URL value visible even if no current case
+  // has that value.
+  const dropdownCaseTypes = Array.from(
+    new Set([
+      ...availableCaseTypes,
+      ...(caseTypeValue ? [caseTypeValue] : []),
+    ])
+  ).sort((a, b) => a.localeCompare(b));
+
+  const hasActiveFilters = Boolean(
+    fromValue || toValue || caseTypeValue
+  );
+
+  const hasValidDateInput =
+    (!fromValue || fromDate !== null) &&
+    (!toValue || toDate !== null);
+
+  const hasInvalidDateRange =
+    !hasValidDateInput ||
+    (fromDate !== null &&
+      toDate !== null &&
+      fromDate.getTime() > toDate.getTime());
 
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
@@ -349,7 +387,7 @@ export default async function OfficerDashboard({
                 id="from"
                 type="date"
                 name="from"
-                value={fromValue}
+                defaultValue={fromValue}
                 max={toValue || undefined}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
@@ -367,7 +405,7 @@ export default async function OfficerDashboard({
                 id="to"
                 type="date"
                 name="to"
-                value={toValue}
+                defaultValue={toValue}
                 min={fromValue || undefined}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
@@ -384,12 +422,12 @@ export default async function OfficerDashboard({
               <select
                 id="caseType"
                 name="caseType"
-                value={caseTypeValue}
+                defaultValue={caseTypeValue}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">All case types</option>
 
-                {availableCaseTypes.map((type) => (
+                {dropdownCaseTypes.map((type) => (
                   <option key={type} value={type}>
                     {type.replaceAll("_", " ")}
                   </option>
@@ -420,13 +458,13 @@ export default async function OfficerDashboard({
                 Active filters:
               </span>
 
-              {fromDate && (
+              {fromValue && (
                 <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                   From: {fromValue}
                 </span>
               )}
 
-              {toDate && (
+              {toValue && (
                 <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                   To: {toValue}
                 </span>
@@ -438,10 +476,11 @@ export default async function OfficerDashboard({
                 </span>
               )}
 
-              {!validDateRange && (
+              {hasInvalidDateRange && (
                 <p className="w-full text-sm font-medium text-red-600">
-                  The date range is invalid. Please select valid dates and
+                  The date range is invalid. Select valid dates and
                   ensure the From Date is not later than the To Date.
+                  Date filtering is temporarily ignored until corrected.
                 </p>
               )}
             </div>
@@ -514,6 +553,7 @@ export default async function OfficerDashboard({
                               day: "numeric",
                               month: "long",
                               year: "numeric",
+                              timeZone: "Africa/Blantyre",
                             }
                           )}
                         </p>
@@ -602,11 +642,12 @@ export default async function OfficerDashboard({
                           </Link>
                         )}
 
-                        {!c.nationalIdUrl && !c.recommendationUrl && (
-                          <p className="text-sm text-gray-500">
-                            No documents uploaded.
-                          </p>
-                        )}
+                        {!c.nationalIdUrl &&
+                          !c.recommendationUrl && (
+                            <p className="text-sm text-gray-500">
+                              No documents uploaded.
+                            </p>
+                          )}
                       </div>
                     </div>
 
@@ -637,31 +678,34 @@ export default async function OfficerDashboard({
                         <div className="mt-3 space-y-1 text-sm text-green-900">
                           <p>
                             <strong>Date:</strong>{" "}
-                            {new Date(c.consultationAt).toLocaleDateString(
-                              "en-MW",
-                              {
-                                weekday: "long",
-                                day: "numeric",
-                                month: "long",
-                                year: "numeric",
-                              }
-                            )}
+                            {new Date(
+                              c.consultationAt
+                            ).toLocaleDateString("en-MW", {
+                              weekday: "long",
+                              day: "numeric",
+                              month: "long",
+                              year: "numeric",
+                              timeZone: "Africa/Blantyre",
+                            })}
                           </p>
 
                           <p>
                             <strong>Time:</strong>{" "}
-                            {new Date(c.consultationAt).toLocaleTimeString(
-                              "en-MW",
-                              {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }
-                            )}
+                            {new Date(
+                              c.consultationAt
+                            ).toLocaleTimeString("en-MW", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              timeZone: "Africa/Blantyre",
+                            })}
                           </p>
 
                           <p>
                             <strong>Status:</strong>{" "}
-                            {c.consultationStatus.replaceAll("_", " ")}
+                            {c.consultationStatus.replaceAll(
+                              "_",
+                              " "
+                            )}
                           </p>
                         </div>
                       ) : (
@@ -687,7 +731,11 @@ export default async function OfficerDashboard({
                           action={updateCaseStatus}
                           className="space-y-3"
                         >
-                          <input type="hidden" name="id" value={c.id} />
+                          <input
+                            type="hidden"
+                            name="id"
+                            value={c.id}
+                          />
 
                           <textarea
                             name="comment"
@@ -731,14 +779,22 @@ export default async function OfficerDashboard({
                           action={scheduleConsultation}
                           className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
                         >
-                          <input type="hidden" name="id" value={c.id} />
+                          <input
+                            type="hidden"
+                            name="id"
+                            value={c.id}
+                          />
 
                           <div>
-                            <label className="mb-1 block text-xs font-medium text-gray-600">
+                            <label
+                              htmlFor={`consultation-date-${c.id}`}
+                              className="mb-1 block text-xs font-medium text-gray-600"
+                            >
                               Date
                             </label>
 
                             <input
+                              id={`consultation-date-${c.id}`}
                               type="date"
                               name="consultationDate"
                               required
@@ -747,11 +803,15 @@ export default async function OfficerDashboard({
                           </div>
 
                           <div>
-                            <label className="mb-1 block text-xs font-medium text-gray-600">
+                            <label
+                              htmlFor={`consultation-time-${c.id}`}
+                              className="mb-1 block text-xs font-medium text-gray-600"
+                            >
                               Time
                             </label>
 
                             <input
+                              id={`consultation-time-${c.id}`}
                               type="time"
                               name="consultationTime"
                               required
@@ -783,8 +843,8 @@ export default async function OfficerDashboard({
                             </h4>
 
                             <p className="mt-1 text-sm text-gray-600">
-                              Set the amount the client is required to pay
-                              for this case.
+                              Set the amount the client is required to
+                              pay for this case.
                             </p>
                           </div>
 
@@ -798,9 +858,9 @@ export default async function OfficerDashboard({
 
                                   <p className="mt-1 text-lg font-bold text-gray-900">
                                     MWK{" "}
-                                    {Number(c.assignedFee).toLocaleString(
-                                      "en-MW"
-                                    )}
+                                    {Number(
+                                      c.assignedFee
+                                    ).toLocaleString("en-MW")}
                                   </p>
                                 </div>
 
@@ -824,11 +884,16 @@ export default async function OfficerDashboard({
                                     {c.feeAssignedAt
                                       ? new Date(
                                           c.feeAssignedAt
-                                        ).toLocaleDateString("en-MW", {
-                                          day: "numeric",
-                                          month: "long",
-                                          year: "numeric",
-                                        })
+                                        ).toLocaleDateString(
+                                          "en-MW",
+                                          {
+                                            day: "numeric",
+                                            month: "long",
+                                            year: "numeric",
+                                            timeZone:
+                                              "Africa/Blantyre",
+                                          }
+                                        )
                                       : "Not recorded"}
                                   </p>
                                 </div>
@@ -839,7 +904,11 @@ export default async function OfficerDashboard({
                             action={chargeCase}
                             className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
                           >
-                            <input type="hidden" name="id" value={c.id} />
+                            <input
+                              type="hidden"
+                              name="id"
+                              value={c.id}
+                            />
 
                             <div>
                               <label
