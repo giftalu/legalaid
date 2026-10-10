@@ -1,3 +1,4 @@
+
 "use server";
 
 import { db } from "@/lib/db";
@@ -5,15 +6,45 @@ import { requireUser } from "@/lib/auth";
 import {
   CaseStatus,
   ConsultationStatus,
+  PaymentStatus,
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+/**
+ * Validate a positive integer ID.
+ */
+function getValidId(
+  value: FormDataEntryValue | null,
+  label: string
+): number {
+  if (value === null || String(value).trim() === "") {
+    throw new Error(`Valid ${label} is required.`);
+  }
 
+  const id = Number(value);
 
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error(`Valid ${label} is required.`);
+  }
+
+  return id;
+}
 
 /**
- * Approve or reject a case
+ * Revalidate pages affected by case changes.
+ */
+function refreshCasePages(id: number) {
+  revalidatePath("/officer/dashboard");
+  revalidatePath("/officer/cases");
+  revalidatePath(`/officer/cases/${id}`);
+  revalidatePath(`/officer/cases/${id}/edit`);
+  revalidatePath("/officer/reports");
+  revalidatePath("/client/dashboard");
+}
+
+/**
+ * Approve or reject a case.
  */
 export async function updateCaseStatus(formData: FormData) {
   const officer = await requireUser("OFFICER");
@@ -22,106 +53,93 @@ export async function updateCaseStatus(formData: FormData) {
     redirect("/login");
   }
 
-  const id = Number(formData.get("id"));
-  const statusValue = String(formData.get("status") || "");
-  const comment = String(
-    formData.get("comment") || ""
-  ).trim();
-
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("Valid Case ID is required.");
-  }
+  const id = getValidId(formData.get("id"), "Case ID");
+  const statusValue = String(formData.get("status") ?? "");
+  const comment = String(formData.get("comment") ?? "").trim();
 
   if (
-    statusValue !== "APPROVED" &&
-    statusValue !== "REJECTED"
+    statusValue !== CaseStatus.APPROVED &&
+    statusValue !== CaseStatus.REJECTED
   ) {
     throw new Error("Invalid case status.");
   }
 
-  const status =
-    statusValue === "APPROVED"
-      ? CaseStatus.APPROVED
-      : CaseStatus.REJECTED;
+  if (comment.length > 5000) {
+    throw new Error("Officer comment must not exceed 5000 characters.");
+  }
 
   await db.case.update({
-    where: {
-      id,
-    },
+    where: { id },
     data: {
-      status,
+      status: statusValue as CaseStatus,
       officerComment: comment || null,
       reviewedById: officer.id,
     },
   });
 
-  revalidatePath("/officer/dashboard");
-  revalidatePath(`/officer/cases/${id}`);
-  revalidatePath(`/officer/cases/${id}/edit`);
-  revalidatePath("/client/dashboard");
+  refreshCasePages(id);
 }
 
 /**
- * Schedule a consultation
+ * Schedule a consultation.
  */
-export async function scheduleConsultation(
-  formData: FormData
-) {
+export async function scheduleConsultation(formData: FormData) {
   const officer = await requireUser("OFFICER");
 
   if (!officer) {
     redirect("/login");
   }
 
-  const id = Number(formData.get("id"));
+  const id = getValidId(formData.get("id"), "Case ID");
 
   const consultationDate = String(
-    formData.get("consultationDate") || ""
-  );
+    formData.get("consultationDate") ?? ""
+  ).trim();
 
   const consultationTime = String(
-    formData.get("consultationTime") || ""
-  );
-
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("Valid Case ID is required.");
-  }
+    formData.get("consultationTime") ?? ""
+  ).trim();
 
   if (!consultationDate || !consultationTime) {
-    throw new Error(
-      "Consultation date and time are required."
-    );
+    throw new Error("Consultation date and time are required.");
+  }
+
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(consultationDate) ||
+    !/^\d{2}:\d{2}$/.test(consultationTime)
+  ) {
+    throw new Error("Invalid consultation date or time.");
   }
 
   const consultationAt = new Date(
     `${consultationDate}T${consultationTime}:00`
   );
 
-  if (Number.isNaN(consultationAt.getTime())) {
-    throw new Error(
-      "Invalid consultation date or time."
-    );
+  if (
+    Number.isNaN(consultationAt.getTime()) ||
+    consultationAt.getFullYear() !==
+      Number(consultationDate.slice(0, 4)) ||
+    consultationAt.getMonth() + 1 !==
+      Number(consultationDate.slice(5, 7)) ||
+    consultationAt.getDate() !==
+      Number(consultationDate.slice(8, 10))
+  ) {
+    throw new Error("Invalid consultation date or time.");
   }
 
   await db.case.update({
-    where: {
-      id,
-    },
+    where: { id },
     data: {
       consultationAt,
-      consultationStatus:
-        ConsultationStatus.SCHEDULED,
+      consultationStatus: ConsultationStatus.SCHEDULED,
     },
   });
 
-  revalidatePath("/officer/dashboard");
-  revalidatePath(`/officer/cases/${id}`);
-  revalidatePath(`/officer/cases/${id}/edit`);
-  revalidatePath("/client/dashboard");
+  refreshCasePages(id);
 }
 
 /**
- * Edit a case
+ * Edit a case.
  */
 export async function updateCase(formData: FormData) {
   const officer = await requireUser("OFFICER");
@@ -130,36 +148,42 @@ export async function updateCase(formData: FormData) {
     redirect("/login");
   }
 
-  const id = Number(formData.get("id"));
+  const id = getValidId(formData.get("id"), "Case ID");
 
   const caseType = String(
-    formData.get("caseType") || ""
+    formData.get("caseType") ?? ""
   ).trim();
 
   const description = String(
-    formData.get("description") || ""
+    formData.get("description") ?? ""
   ).trim();
 
   const statusValue = String(
-    formData.get("status") || ""
+    formData.get("status") ?? ""
   );
 
   const officerComment = String(
-    formData.get("officerComment") || ""
+    formData.get("officerComment") ?? ""
   ).trim();
-
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("Valid Case ID is required.");
-  }
 
   if (!caseType) {
     throw new Error("Case type is required.");
   }
 
   if (!description) {
-    throw new Error(
-      "Case description is required."
-    );
+    throw new Error("Case description is required.");
+  }
+
+  if (caseType.length > 200) {
+    throw new Error("Case type is too long.");
+  }
+
+  if (description.length > 20000) {
+    throw new Error("Case description is too long.");
+  }
+
+  if (officerComment.length > 5000) {
+    throw new Error("Officer comment must not exceed 5000 characters.");
   }
 
   const validStatuses: CaseStatus[] = [
@@ -173,38 +197,27 @@ export async function updateCase(formData: FormData) {
     CaseStatus.CLOSED,
   ];
 
-  if (
-    !validStatuses.includes(
-      statusValue as CaseStatus
-    )
-  ) {
+  if (!validStatuses.includes(statusValue as CaseStatus)) {
     throw new Error("Invalid case status.");
   }
 
-  const status = statusValue as CaseStatus;
-
   await db.case.update({
-    where: {
-      id,
-    },
+    where: { id },
     data: {
       caseType,
       description,
-      status,
+      status: statusValue as CaseStatus,
       officerComment: officerComment || null,
     },
   });
 
-  revalidatePath("/officer/dashboard");
-  revalidatePath(`/officer/cases/${id}`);
-  revalidatePath(`/officer/cases/${id}/edit`);
-  revalidatePath("/client/dashboard");
+  refreshCasePages(id);
 
   redirect(`/officer/cases/${id}`);
 }
 
 /**
- * Delete a case
+ * Delete a case.
  */
 export async function deleteCase(formData: FormData) {
   const officer = await requireUser("OFFICER");
@@ -213,26 +226,21 @@ export async function deleteCase(formData: FormData) {
     redirect("/login");
   }
 
-  const id = Number(formData.get("id"));
-
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("Valid Case ID is required.");
-  }
+  const id = getValidId(formData.get("id"), "Case ID");
 
   await db.case.delete({
-    where: {
-      id,
-    },
+    where: { id },
   });
-  
 
   revalidatePath("/officer/dashboard");
+  revalidatePath("/officer/cases");
   revalidatePath("/client/dashboard");
 
   redirect("/officer/dashboard");
 }
+
 /**
- * Charge a case
+ * Charge a case.
  */
 export async function chargeCase(formData: FormData) {
   const officer = await requireUser("OFFICER");
@@ -241,44 +249,38 @@ export async function chargeCase(formData: FormData) {
     redirect("/login");
   }
 
-  const id = Number(formData.get("id"));
+  const id = getValidId(formData.get("id"), "Case ID");
 
   const amountValue = String(
-    formData.get("amount") || ""
+    formData.get("amount") ?? ""
   ).trim();
 
   const description = String(
-    formData.get("description") || ""
+    formData.get("description") ?? ""
   ).trim();
 
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new Error("Valid Case ID is required.");
+  if (!/^\d+(\.\d{1,2})?$/.test(amountValue)) {
+    throw new Error(
+      "Enter a valid amount with up to two decimal places."
+    );
   }
 
   const amount = Number(amountValue);
 
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error(
-      "Charge amount must be greater than zero."
-    );
+    throw new Error("Charge amount must be greater than zero.");
   }
 
   if (amount > 1_000_000_000) {
-    throw new Error(
-      "Charge amount is too large."
-    );
+    throw new Error("Charge amount is too large.");
   }
 
   if (description.length > 500) {
-    throw new Error(
-      "Charge description must be 500 characters or less."
-    );
+    throw new Error("Charge description must be 500 characters or less.");
   }
 
   const existingCase = await db.case.findUnique({
-    where: {
-      id,
-    },
+    where: { id },
     select: {
       id: true,
       caseNumber: true,
@@ -290,9 +292,7 @@ export async function chargeCase(formData: FormData) {
   }
 
   await db.case.update({
-    where: {
-      id,
-    },
+    where: { id },
     data: {
       assignedFee: amount,
       feeDescription: description || null,
@@ -300,58 +300,47 @@ export async function chargeCase(formData: FormData) {
     },
   });
 
-  revalidatePath("/officer/dashboard");
-  revalidatePath(`/officer/cases/${id}`);
-  revalidatePath(`/officer/cases/${id}/edit`);
-  revalidatePath("/officer/reports");
-  revalidatePath("/client/dashboard");
+  refreshCasePages(id);
 }
+
 /**
- * Review a client payment
+ * Review a client payment.
+ *
+ * PAID = the officer verified and approved the payment.
+ * FAILED = the officer rejected the submitted payment.
  */
-export async function reviewPayment(
-  formData: FormData
-) {
+export async function reviewPayment(formData: FormData) {
   const officer = await requireUser("OFFICER");
 
   if (!officer) {
     redirect("/login");
   }
 
-  const paymentId = Number(
-    formData.get("paymentId")
+  const paymentId = getValidId(
+    formData.get("paymentId"),
+    "Payment ID"
   );
 
-  const decision = String(
-    formData.get("decision") || ""
-  );
+  const decisionValue = String(
+    formData.get("decision") ?? ""
+  ).trim();
 
   if (
-    !Number.isInteger(paymentId) ||
-    paymentId <= 0
+    decisionValue !== PaymentStatus.PAID &&
+    decisionValue !== PaymentStatus.FAILED
   ) {
-    throw new Error(
-      "Valid payment ID is required."
-    );
+    throw new Error("Invalid payment decision.");
   }
 
-  if (
-    decision !== "PAID" &&
-    decision !== "FAILED"
-  ) {
-    throw new Error(
-      "Invalid payment decision."
-    );
-  }
+  const decision = decisionValue as PaymentStatus;
 
   const payment = await db.payment.findUnique({
-    where: {
-      id: paymentId,
-    },
+    where: { id: paymentId },
     select: {
       id: true,
       caseId: true,
       status: true,
+      proofUrl: true,
     },
   });
 
@@ -359,38 +348,54 @@ export async function reviewPayment(
     throw new Error("Payment not found.");
   }
 
-  if (
-    payment.status !== "PENDING" &&
-    payment.status !== "PROCESSING"
-  ) {
+  if (!payment.proofUrl) {
     throw new Error(
-      "This payment has already been reviewed."
+      "No payment proof is attached. The payment cannot be reviewed."
     );
   }
 
-  await db.payment.update({
+  if (
+    payment.status !== PaymentStatus.PENDING &&
+    payment.status !== PaymentStatus.PROCESSING
+  ) {
+    throw new Error(
+      "This payment has already been reviewed or is no longer reviewable."
+    );
+  }
+
+  // Only update if the payment is still awaiting review.
+  // This prevents conflicting decisions from concurrent requests.
+  const result = await db.payment.updateMany({
     where: {
       id: paymentId,
+      status: {
+        in: [
+          PaymentStatus.PENDING,
+          PaymentStatus.PROCESSING,
+        ],
+      },
     },
     data: {
       status: decision,
       paymentReviewedAt: new Date(),
       paymentReviewedById: officer.id,
       paidAt:
-        decision === "PAID"
+        decision === PaymentStatus.PAID
           ? new Date()
           : null,
     },
   });
 
-  revalidatePath("/officer/dashboard");
-  revalidatePath(
-    `/officer/cases/${payment.caseId}`
-  );
-  revalidatePath("/client/dashboard");
-  revalidatePath(
-    `/client/cases/${payment.caseId}`
-  );
-  revalidatePath("/officer/reports");
-}
+  if (result.count !== 1) {
+    throw new Error(
+      "The payment has already changed. Refresh the page and try again."
+    );
+  }
 
+  revalidatePath("/officer/dashboard");
+  revalidatePath("/officer/cases");
+  revalidatePath(`/officer/cases/${payment.caseId}`);
+  revalidatePath("/officer/reports");
+  revalidatePath("/client/dashboard");
+  revalidatePath(`/client/cases/${payment.caseId}`);
+}

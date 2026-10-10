@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-
+import { reviewPayment } from "@/app/officer/actions";
 function Field({
   label,
   value,
@@ -520,6 +520,52 @@ export default async function OfficerCasePage({
                         )}
 
         
+
+                        {/* Approve or reject payment proof */}
+                        {paymentWithProof.proofUrl &&
+                          (payment.status === "PENDING" ||
+                            payment.status === "PROCESSING") && (
+                            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                              <form action={reviewPayment} className="flex-1">
+                                <input
+                                  type="hidden"
+                                  name="paymentId"
+                                  value={payment.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="decision"
+                                  value="PAID"
+                                />
+                                <button
+                                  type="submit"
+                                  className="w-full rounded-lg bg-green-600 px-4 py-3 font-semibold text-white hover:bg-green-700"
+                                >
+                                  Approve Payment
+                                </button>
+                              </form>
+
+                              <form action={reviewPayment} className="flex-1">
+                                <input
+                                  type="hidden"
+                                  name="paymentId"
+                                  value={payment.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="decision"
+                                  value="FAILED"
+                                />
+                                <button
+                                  type="submit"
+                                  className="w-full rounded-lg bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-700"
+                                >
+                                  Reject Payment
+                                </button>
+                              </form>
+                            </div>
+                          )}
+
                       </div>
                     </div>
                   );
