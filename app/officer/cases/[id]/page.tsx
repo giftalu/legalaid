@@ -519,11 +519,7 @@ export default async function OfficerCasePage({
                           </p>
                         )}
 
-                        {payment.status === "REJECTED" && (
-                          <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
-                            This payment has been rejected.
-                          </p>
-                        )}
+        
                       </div>
                     </div>
                   );
