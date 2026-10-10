@@ -119,7 +119,7 @@ export default async function ClientDashboard({
       userId: user.id,
       ...(selectedType ? { caseType: selectedType } : {}),
       ...(dateFiltersValid &&
-      (fromDate || toDate)
+        (fromDate || toDate)
         ? { createdAt: createdAtFilter }
         : {}),
     },
@@ -398,7 +398,7 @@ export default async function ClientDashboard({
                         </div>
 
                         {c.assignedFee !== null &&
-                        c.assignedFee !== undefined ? (
+                          c.assignedFee !== undefined ? (
                           <span className="inline-flex w-fit rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
                             Fee Assigned
                           </span>
@@ -410,8 +410,9 @@ export default async function ClientDashboard({
                       </div>
 
                       {c.assignedFee !== null &&
-                      c.assignedFee !== undefined ? (
+                        c.assignedFee !== undefined ? (
                         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {/* Amount Assigned */}
                           <div className="rounded-lg border border-amber-200 bg-white p-4">
                             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                               Amount Assigned
@@ -425,6 +426,7 @@ export default async function ClientDashboard({
                             </p>
                           </div>
 
+                          {/* Charge Description */}
                           <div className="rounded-lg border border-amber-200 bg-white p-4">
                             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                               Charge Description
@@ -434,22 +436,30 @@ export default async function ClientDashboard({
                             </p>
                           </div>
 
+                          {/* Date Charged */}
                           <div className="rounded-lg border border-amber-200 bg-white p-4 sm:col-span-2">
                             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                               Date Charged
                             </p>
                             <p className="mt-2 text-sm text-gray-800">
                               {c.feeAssignedAt
-                                ? new Date(c.feeAssignedAt).toLocaleDateString(
-                                    "en-MW",
-                                    {
-                                      day: "numeric",
-                                      month: "long",
-                                      year: "numeric",
-                                    }
-                                  )
+                                ? new Date(c.feeAssignedAt).toLocaleDateString("en-MW", {
+                                  day: "numeric",
+                                  month: "long",
+                                  year: "numeric",
+                                })
                                 : "Date not recorded"}
                             </p>
+                          </div>
+
+                          {/* Pay Now Button */}
+                          <div className="sm:col-span-2">
+                            <Link
+                              href={`/client/cases/${c.id}`}
+                              className="inline-flex w-full items-center justify-center rounded-lg bg-green-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 sm:w-auto"
+                            >
+                              Pay Now
+                            </Link>
                           </div>
                         </div>
                       ) : (
@@ -570,14 +580,13 @@ export default async function ClientDashboard({
 
                       <Link
                         href={`/client/cases/${c.id}/edit`}
-                        className={`rounded-lg px-4 py-2.5 text-center text-sm font-semibold ${
-                          c.status === "APPROVED" ||
-                          c.status === "REJECTED" ||
-                          c.status === "RESOLVED" ||
-                          c.status === "CLOSED"
+                        className={`rounded-lg px-4 py-2.5 text-center text-sm font-semibold ${c.status === "APPROVED" ||
+                            c.status === "REJECTED" ||
+                            c.status === "RESOLVED" ||
+                            c.status === "CLOSED"
                             ? "pointer-events-none bg-gray-200 text-gray-400"
                             : "bg-amber-500 text-white hover:bg-amber-600"
-                        }`}
+                          }`}
                       >
                         Edit Case
                       </Link>
@@ -640,9 +649,8 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-        styles[status] || "bg-gray-100 text-gray-700"
-      }`}
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-700"
+        }`}
     >
       {status.replaceAll("_", " ")}
     </span>

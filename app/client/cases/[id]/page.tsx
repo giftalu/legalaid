@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { submitPayment } from "@/app/client/actions";
+import PaymentProofForm from "./PaymentProofForm";
 function Field({
   label,
   value,
@@ -567,13 +568,13 @@ export default async function ClientCasePage({
 
                             <span
                               className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-bold ${payment.status === "PAID"
-                                  ? "bg-green-100 text-green-800"
-                                  : payment.status === "FAILED" ||
-                                    payment.status === "CANCELLED"
-                                    ? "bg-red-100 text-red-800"
-                                    : payment.status === "PROCESSING"
-                                      ? "bg-blue-100 text-blue-800"
-                                      : "bg-yellow-100 text-yellow-800"
+                                ? "bg-green-100 text-green-800"
+                                : payment.status === "FAILED" ||
+                                  payment.status === "CANCELLED"
+                                  ? "bg-red-100 text-red-800"
+                                  : payment.status === "PROCESSING"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-yellow-100 text-yellow-800"
                                 }`}
                             >
                               {payment.status.replaceAll("_", " ")}
@@ -603,94 +604,10 @@ export default async function ClientCasePage({
                         for the officer to review it before submitting another payment.
                       </p>
                     ) : (
-                      <form
-                        action={submitPayment}
-                        encType="multipart/form-data"
-                        className="mt-5 space-y-4"
-                      >
-                        <input
-                          type="hidden"
-                          name="caseId"
-                          value={caseData.id}
-                        />
-
-                        <div>
-                          <label
-                            htmlFor="payment-amount"
-                            className="mb-1 block text-sm font-semibold text-gray-700"
-                          >
-                            Amount Paid (MWK)
-                          </label>
-
-                          <input
-                            id="payment-amount"
-                            name="amount"
-                            type="number"
-                            min="0.01"
-                            max={outstanding}
-                            step="0.01"
-                            required
-                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                            placeholder="Enter amount paid"
-                          />
-
-                          <p className="mt-1 text-xs text-gray-500">
-                            Maximum outstanding balance: MWK{" "}
-                            {outstanding.toLocaleString("en-MW", {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </p>
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="transaction-id"
-                            className="mb-1 block text-sm font-semibold text-gray-700"
-                          >
-                            Transaction ID
-                          </label>
-
-                          <input
-                            id="transaction-id"
-                            name="transactionId"
-                            type="text"
-                            maxLength={200}
-                            required
-                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                            placeholder="Enter bank or mobile-money transaction ID"
-                          />
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="payment-proof"
-                            className="mb-1 block text-sm font-semibold text-gray-700"
-                          >
-                            Deposit Slip / Payment Proof
-                          </label>
-
-                          <input
-                            id="payment-proof"
-                            name="proof"
-                            type="file"
-                            accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                            required
-                            className="block w-full rounded-lg border border-gray-300 bg-white text-sm text-gray-700 file:mr-4 file:border-0 file:bg-gray-100 file:px-4 file:py-2.5 file:font-semibold hover:file:bg-gray-200"
-                          />
-
-                          <p className="mt-1 text-xs text-gray-500">
-                            PDF, JPG, PNG, or WebP. Maximum size: 10 MB.
-                          </p>
-                        </div>
-
-                        <button
-                          type="submit"
-                          className="w-full rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        >
-                          Submit Payment Proof
-                        </button>
-                      </form>
+                      <PaymentProofForm
+                        caseId={caseData.id}
+                        outstanding={outstanding}
+                      />
                     )}
                   </div>
                 )}
