@@ -17,9 +17,11 @@ const ALLOWED_TYPES = [
 
 export default function PaymentProofForm({
   caseId,
+  clientId,
   outstanding,
 }: {
   caseId: number;
+  clientId: number;
   outstanding: number;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -57,7 +59,7 @@ export default function PaymentProofForm({
 
       // The file travels directly from the browser to private Blob storage.
       const blob = await upload(
-        `legal-aid/payments/${caseId}/${Date.now()}-${safeName}`,
+       `legal-aid/${clientId}/payments/${caseId}/${Date.now()}-${safeName}`,
         file,
         {
           access: "private",

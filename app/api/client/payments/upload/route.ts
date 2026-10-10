@@ -59,12 +59,11 @@ export async function POST(request: Request) {
 
         // Only allow the requested path for this case.
         const requestedPrefix =
-          `legal-aid/payments/${caseId}/`;
+          `legal-aid/${client.id}/payments/${caseId}/`;
 
         if (!pathname.startsWith(requestedPrefix)) {
           throw new Error("Invalid upload path.");
         }
-
         // Confirm the case belongs to the logged-in client.
         const caseItem = await db.case.findFirst({
           where: {

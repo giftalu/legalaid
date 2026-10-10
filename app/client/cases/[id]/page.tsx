@@ -606,6 +606,7 @@ export default async function ClientCasePage({
                     ) : (
                       <PaymentProofForm
                         caseId={caseData.id}
+                        clientId={user.id}
                         outstanding={outstanding}
                       />
                     )}
