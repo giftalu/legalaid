@@ -323,5 +323,5 @@ export async function submitPayment(formData: FormData) {
   revalidatePath("/officer/dashboard");
   revalidatePath("/officer/reports");
 
-  redirect("/client/dashboard");
+  redirect(`/client/cases/${caseId}`);
 }

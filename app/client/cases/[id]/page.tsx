@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-
+import { submitPayment } from "@/app/client/actions";
 function Field({
   label,
   value,
@@ -12,8 +12,8 @@ function Field({
 }) {
   const text =
     value === null ||
-    value === undefined ||
-    value === ""
+      value === undefined ||
+      value === ""
       ? "Not provided"
       : String(value);
 
@@ -68,9 +68,8 @@ function StatusBadge({
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
-        styles[status] ?? "bg-gray-100 text-gray-800"
-      }`}
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${styles[status] ?? "bg-gray-100 text-gray-800"
+        }`}
     >
       {status.replaceAll("_", " ")}
     </span>
@@ -92,7 +91,7 @@ export default async function ClientCasePage({
 
   const caseData = await db.case.findFirst({
     where: {
-      id:Number(id),
+      id: Number(id),
       userId: user.id,
     },
   });
@@ -100,7 +99,41 @@ export default async function ClientCasePage({
   if (!caseData) {
     notFound();
   }
+  const payments = await db.payment.findMany({
+    where: {
+      caseId: caseData.id,
+      userId: user.id,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    select: {
+      id: true,
+      amount: true,
+      currency: true,
+      status: true,
+      reference: true,
+      transactionId: true,
+      proofFileName: true,
+      paymentSubmittedAt: true,
+      paymentReviewedAt: true,
+      description: true,
+    },
+  });
 
+  const assignedFee = Number(caseData.assignedFee ?? 0);
+
+  const paidAmount = payments
+    .filter((payment) => payment.status === "PAID")
+    .reduce((sum, payment) => sum + Number(payment.amount), 0);
+
+  const outstanding = Math.max(assignedFee - paidAmount, 0);
+
+  const pendingPayment = payments.some(
+    (payment) =>
+      payment.status === "PENDING" ||
+      payment.status === "PROCESSING"
+  );
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
@@ -423,19 +456,255 @@ export default async function ClientCasePage({
 
           </section>
 
-          {/* PAYMENT PLACEHOLDER */}
-          <section className="rounded-2xl border border-yellow-200 bg-yellow-50 p-5">
-
-            <h2 className="text-lg font-bold text-yellow-900">
-              Payments
+          {/* PAYMENTS */}
+          <section className="rounded-2xl border border-yellow-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-gray-900">
+              6. Payments
             </h2>
 
-            <p className="mt-2 text-sm text-yellow-800">
-              Payment information will appear here when
-              a fee has been assigned to this case.
-            </p>
+            {caseData.assignedFee === null ||
+              caseData.assignedFee === undefined ||
+              assignedFee <= 0 ? (
+              <p className="mt-3 rounded-xl bg-yellow-50 p-4 text-sm text-yellow-800">
+                No fee has been assigned to this case yet. You will be able to
+                submit payment after the Legal Aid Officer assigns a fee.
+              </p>
+            ) : (
+              <>
+                <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-xs font-semibold uppercase text-gray-500">
+                      Assigned Fee
+                    </p>
+                    <p className="mt-2 text-xl font-bold text-gray-900">
+                      MWK {assignedFee.toLocaleString("en-MW", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
 
+                  <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-green-700">
+                      Amount Paid
+                    </p>
+                    <p className="mt-2 text-xl font-bold text-green-800">
+                      MWK {paidAmount.toLocaleString("en-MW", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-blue-700">
+                      Outstanding Balance
+                    </p>
+                    <p className="mt-2 text-xl font-bold text-blue-800">
+                      MWK {outstanding.toLocaleString("en-MW", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <h3 className="text-base font-bold text-gray-900">
+                    Payment History
+                  </h3>
+
+                  {payments.length === 0 ? (
+                    <p className="mt-3 rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+                      You have not submitted any payments for this case.
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      {payments.map((payment) => (
+                        <div
+                          key={payment.id}
+                          className="rounded-xl border border-gray-200 p-4"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="font-semibold text-gray-900">
+                                MWK {Number(payment.amount).toLocaleString("en-MW", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </p>
+
+                              <p className="mt-1 break-all text-sm text-gray-600">
+                                Payment reference: {payment.reference}
+                              </p>
+
+                              <p className="mt-1 break-all text-sm text-gray-600">
+                                Transaction ID: {payment.transactionId || "Not provided"}
+                              </p>
+
+                              <p className="mt-1 break-words text-sm text-gray-600">
+                                Proof: {payment.proofFileName || "No file recorded"}
+                              </p>
+
+                              <p className="mt-1 text-sm text-gray-500">
+                                Submitted: {payment.paymentSubmittedAt
+                                  ? new Date(payment.paymentSubmittedAt).toLocaleString("en-MW")
+                                  : new Date().toLocaleString("en-MW")}
+                              </p>
+
+                              {payment.paymentReviewedAt && (
+                                <p className="mt-1 text-sm text-gray-500">
+                                  Reviewed: {new Date(payment.paymentReviewedAt).toLocaleString("en-MW")}
+                                </p>
+                              )}
+
+                              {payment.description && (
+                                <p className="mt-2 text-sm text-gray-600">
+                                  {payment.description}
+                                </p>
+                              )}
+                            </div>
+
+                            <span
+                              className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-bold ${payment.status === "PAID"
+                                  ? "bg-green-100 text-green-800"
+                                  : payment.status === "FAILED" ||
+                                    payment.status === "CANCELLED"
+                                    ? "bg-red-100 text-red-800"
+                                    : payment.status === "PROCESSING"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-yellow-100 text-yellow-800"
+                                }`}
+                            >
+                              {payment.status.replaceAll("_", " ")}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {outstanding > 0 && (
+                  <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                    <h3 className="font-bold text-blue-900">
+                      Submit Proof of Payment
+                    </h3>
+
+                    <p className="mt-1 text-sm text-blue-800">
+                      Enter the amount you paid, your transaction ID, and upload
+                      your deposit slip or payment confirmation. Your payment will
+                      remain pending until an officer reviews it.
+                    </p>
+
+                    {pendingPayment ? (
+                      <p className="mt-4 rounded-lg bg-white p-3 text-sm text-amber-800">
+                        You already have a payment awaiting review. Please wait
+                        for the officer to review it before submitting another payment.
+                      </p>
+                    ) : (
+                      <form
+                        action={submitPayment}
+                        encType="multipart/form-data"
+                        className="mt-5 space-y-4"
+                      >
+                        <input
+                          type="hidden"
+                          name="caseId"
+                          value={caseData.id}
+                        />
+
+                        <div>
+                          <label
+                            htmlFor="payment-amount"
+                            className="mb-1 block text-sm font-semibold text-gray-700"
+                          >
+                            Amount Paid (MWK)
+                          </label>
+
+                          <input
+                            id="payment-amount"
+                            name="amount"
+                            type="number"
+                            min="0.01"
+                            max={outstanding}
+                            step="0.01"
+                            required
+                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                            placeholder="Enter amount paid"
+                          />
+
+                          <p className="mt-1 text-xs text-gray-500">
+                            Maximum outstanding balance: MWK{" "}
+                            {outstanding.toLocaleString("en-MW", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="transaction-id"
+                            className="mb-1 block text-sm font-semibold text-gray-700"
+                          >
+                            Transaction ID
+                          </label>
+
+                          <input
+                            id="transaction-id"
+                            name="transactionId"
+                            type="text"
+                            maxLength={200}
+                            required
+                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                            placeholder="Enter bank or mobile-money transaction ID"
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="payment-proof"
+                            className="mb-1 block text-sm font-semibold text-gray-700"
+                          >
+                            Deposit Slip / Payment Proof
+                          </label>
+
+                          <input
+                            id="payment-proof"
+                            name="proof"
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                            required
+                            className="block w-full rounded-lg border border-gray-300 bg-white text-sm text-gray-700 file:mr-4 file:border-0 file:bg-gray-100 file:px-4 file:py-2.5 file:font-semibold hover:file:bg-gray-200"
+                          />
+
+                          <p className="mt-1 text-xs text-gray-500">
+                            PDF, JPG, PNG, or WebP. Maximum size: 10 MB.
+                          </p>
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="w-full rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                        >
+                          Submit Payment Proof
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                )}
+
+                {outstanding <= 0 && (
+                  <p className="mt-5 rounded-xl bg-green-50 p-4 text-sm font-semibold text-green-800">
+                    This case has been fully paid according to the recorded
+                    approved payments.
+                  </p>
+                )}
+              </>
+            )}
           </section>
+
 
         </div>
       </div>
